@@ -135,6 +135,30 @@ func ThinkingAdaptor(geminiRequest *GeminiChatRequest, info *relaycommon.RelayIn
 	}
 }
 
+// convertToStringSlice 安全地将 interface{} 转换为 []string
+func convertToStringSlice(stop interface{}) []string {
+	if stop == nil {
+		return nil
+	}
+
+	switch v := stop.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	case string:
+		return []string{v}
+	default:
+		return nil
+	}
+}
+
 // Setting safety to the lowest possible values since Gemini is already powerless enough
 func CovertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*GeminiChatRequest, error) {
 
@@ -145,6 +169,14 @@ func CovertGemini2OpenAI(textRequest dto.GeneralOpenAIRequest, info *relaycommon
 			TopP:            textRequest.TopP,
 			MaxOutputTokens: textRequest.MaxTokens,
 			Seed:            int64(textRequest.Seed),
+			StopSequences:   convertToStringSlice(textRequest.Stop),
+			MediaResolution: func() *MediaResolution {
+				if textRequest.MediaResolution != "" {
+					resolution := MediaResolution(textRequest.MediaResolution)
+					return &resolution
+				}
+				return nil
+			}(),
 		},
 	}
 

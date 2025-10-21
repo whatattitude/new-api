@@ -14,6 +14,59 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// // calculateMultimodalTokens 根据 Gemini API 官方规则计算多模态内容的 token 数量
+// func calculateMultimodalTokens(inlineData *GeminiInlineData) int {
+// 	if inlineData == nil {
+// 		return 0
+// 	}
+
+// 	mimeType := strings.ToLower(inlineData.MimeType)
+
+// 	// 图片处理
+// 	if strings.HasPrefix(mimeType, "image/") {
+// 		// 如果没有尺寸信息，使用默认值 258 tokens
+// 		if inlineData.Width == nil || inlineData.Height == nil {
+// 			return 258
+// 		}
+
+// 		width, height := *inlineData.Width, *inlineData.Height
+
+// 		// 如果两个维度都小于等于 384 像素，计为 258 个 token
+// 		if width <= 384 && height <= 384 {
+// 			return 258
+// 		}
+
+// 		// 如果图片较大，按 768x768 图块计算
+// 		// 计算需要的图块数量
+// 		tilesX := int(math.Ceil(float64(width) / 768.0))
+// 		tilesY := int(math.Ceil(float64(height) / 768.0))
+// 		totalTiles := tilesX * tilesY
+
+// 		return totalTiles * 258
+// 	}
+
+// 	// 视频处理：每秒 263 个 token
+// 	if strings.HasPrefix(mimeType, "video/") {
+// 		if inlineData.Duration == nil {
+// 			// 如果没有时长信息，使用默认值
+// 			return 263
+// 		}
+// 		return int(math.Ceil(*inlineData.Duration * 263))
+// 	}
+
+// 	// 音频处理：每秒 32 个 token
+// 	if strings.HasPrefix(mimeType, "audio/") {
+// 		if inlineData.Duration == nil {
+// 			// 如果没有时长信息，使用默认值
+// 			return 32
+// 		}
+// 		return int(math.Ceil(*inlineData.Duration * 32))
+// 	}
+
+// 	// 其他类型，使用默认值
+// 	return 258
+// }
+
 func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer common.CloseResponseBodyGracefully(resp)
 
@@ -51,6 +104,28 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 		}
 	}
 
+	// // 统计响应中的多模态内容（仅用于调试信息）
+	// var imageCount, videoCount, audioCount int
+	// for _, candidate := range geminiResponse.Candidates {
+	// 	for _, part := range candidate.Content.Parts {
+	// 		if part.InlineData != nil && part.InlineData.MimeType != "" {
+	// 			mimeType := strings.ToLower(part.InlineData.MimeType)
+	// 			if strings.HasPrefix(mimeType, "video/") {
+	// 				videoCount++
+	// 			} else if strings.HasPrefix(mimeType, "audio/") {
+	// 				audioCount++
+	// 			} else if strings.HasPrefix(mimeType, "image/") {
+	// 				imageCount++
+	// 			}
+	// 		}
+	// 	}
+	// }
+
+	// if common.DebugEnabled && (imageCount > 0 || videoCount > 0 || audioCount > 0) {
+	// 	println("Generated content contains:", imageCount, "images,", videoCount, "videos,", audioCount, "audio files")
+	// 	println("Official token count - Prompt:", usage.PromptTokens, "Completion:", usage.CompletionTokens, "Total:", usage.TotalTokens)
+	// }
+
 	// 直接返回 Gemini 原生格式的 JSON 响应
 	jsonResponse, err := common.Marshal(geminiResponse)
 	if err != nil {
@@ -65,6 +140,8 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	var usage = &dto.Usage{}
 	var imageCount int
+	// var totalMultimodalTokens int
+	// var imageCount, videoCount, audioCount int
 
 	helper.SetEventStreamHeaders(c)
 
@@ -78,11 +155,22 @@ func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 			return false
 		}
 
-		// 统计图片数量
+		// 统计多模态内容
 		for _, candidate := range geminiResponse.Candidates {
 			for _, part := range candidate.Content.Parts {
 				if part.InlineData != nil && part.InlineData.MimeType != "" {
 					imageCount++
+					// tokens := calculateMultimodalTokens(part.InlineData)
+					// totalMultimodalTokens += tokens
+
+					// mimeType := strings.ToLower(part.InlineData.MimeType)
+					// if strings.HasPrefix(mimeType, "video/") {
+					// 	videoCount++
+					// } else if strings.HasPrefix(mimeType, "audio/") {
+					// 	audioCount++
+					// } else if strings.HasPrefix(mimeType, "image/") {
+					// 	imageCount++
+					// }
 				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
@@ -117,6 +205,20 @@ func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 	if imageCount != 0 {
 		if usage.CompletionTokens == 0 {
 			usage.CompletionTokens = imageCount * 258
+			// // 只有在官方 token 数据不可用时才使用自定义计算
+			// if usage.CompletionTokens == 0 && totalMultimodalTokens > 0 {
+			// 	usage.CompletionTokens = totalMultimodalTokens
+			// 	if common.DebugEnabled {
+			// 		println("Using custom token calculation:", totalMultimodalTokens, "tokens")
+			// 	}
+			// }
+
+			// if common.DebugEnabled && (imageCount > 0 || videoCount > 0 || audioCount > 0) {
+			// 	println("Stream response contains:", imageCount, "images,", videoCount, "videos,", audioCount, "audio files")
+			// 	if usage.CompletionTokens > 0 {
+			// 		println("Official token count - Completion:", usage.CompletionTokens)
+			// 	} else {
+			// 		println("Custom calculated tokens:", totalMultimodalTokens)
 		}
 	}
 

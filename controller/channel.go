@@ -352,15 +352,20 @@ func GetChannel(c *gin.Context) {
 
 // validateChannel 通用的渠道校验函数
 func validateChannel(channel *model.Channel, isAdd bool) error {
+	// 检查 channel 是否为 nil
+	if channel == nil {
+		return fmt.Errorf("channel cannot be nil")
+	}
+
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
 
-	// 如果是添加操作，检查 channel 和 key 是否为空
+	// 如果是添加操作，检查 key 是否为空
 	if isAdd {
-		if channel == nil || channel.Key == "" {
-			return fmt.Errorf("channel cannot be empty")
+		if channel.Key == "" {
+			return fmt.Errorf("channel key cannot be empty")
 		}
 
 		// 检查模型名称长度是否超过 255
@@ -433,6 +438,15 @@ func AddChannel(c *gin.Context) {
 	err := c.ShouldBindJSON(&addChannelRequest)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+
+	// 检查 channel 是否为 nil
+	if addChannelRequest.Channel == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "channel cannot be null",
+		})
 		return
 	}
 

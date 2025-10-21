@@ -62,6 +62,8 @@ type GeneralOpenAIRequest struct {
 	Reasoning json.RawMessage `json:"reasoning,omitempty"`
 	// Ali Qwen Params
 	VlHighResolutionImages json.RawMessage `json:"vl_high_resolution_images,omitempty"`
+	// Gemini Params
+	MediaResolution string `json:"media_resolution,omitempty"`
 }
 
 func (r *GeneralOpenAIRequest) ToMap() map[string]any {

@@ -35,3 +35,13 @@ var SafetySettingList = []string{
 }
 
 var ChannelName = "google gemini"
+
+// MediaResolution 定义媒体分辨率选项
+type MediaResolution string
+
+const (
+	MediaResolutionMedium      MediaResolution = "MEDIA_RESOLUTION_MEDIUM"
+	MediaResolutionLow         MediaResolution = "MEDIA_RESOLUTION_LOW"
+	MediaResolutionHigh        MediaResolution = "MEDIA_RESOLUTION_HIGH"
+	MediaResolutionUnspecified MediaResolution = "MEDIA_RESOLUTION_UNSPECIFIED"
+)

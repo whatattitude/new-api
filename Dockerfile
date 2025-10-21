@@ -12,12 +12,13 @@ FROM golang:alpine AS builder2
 
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
-    GOOS=linux
+    GOOS=linux \
+    GOPROXY=https://mirrors.aliyun.com/goproxy/,direct
 
 WORKDIR /build
 
 ADD go.mod go.sum ./
-RUN go mod download
+RUN go mod download -x
 
 COPY . .
 COPY --from=builder /build/dist ./web/dist

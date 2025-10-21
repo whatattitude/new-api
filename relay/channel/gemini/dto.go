@@ -22,6 +22,10 @@ func (c *GeminiThinkingConfig) SetThinkingBudget(budget int) {
 type GeminiInlineData struct {
 	MimeType string `json:"mimeType"`
 	Data     string `json:"data"`
+	// // 用于 token 计算的尺寸信息（可选）
+	// Width    *int     `json:"width,omitempty"`
+	// Height   *int     `json:"height,omitempty"`
+	// Duration *float64 `json:"duration,omitempty"` // 视频/音频时长（秒）
 }
 
 // UnmarshalJSON custom unmarshaler for GeminiInlineData to support snake_case and camelCase for MimeType
@@ -30,6 +34,9 @@ func (g *GeminiInlineData) UnmarshalJSON(data []byte) error {
 	var aux struct {
 		Alias
 		MimeTypeSnake string `json:"mime_type"`
+		// WidthSnake    *int     `json:"width,omitempty"`
+		// HeightSnake   *int     `json:"height,omitempty"`
+		// DurationSnake *float64 `json:"duration,omitempty"`
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {
@@ -44,7 +51,18 @@ func (g *GeminiInlineData) UnmarshalJSON(data []byte) error {
 	} else if aux.MimeType != "" { // Fallback to camelCase from Alias
 		g.MimeType = aux.MimeType
 	}
-	// g.Data would be populated by aux.Alias.Data
+
+	// // 处理尺寸和时长字段
+	// if aux.WidthSnake != nil {
+	// 	g.Width = aux.WidthSnake
+	// }
+	// if aux.HeightSnake != nil {
+	// 	g.Height = aux.HeightSnake
+	// }
+	// if aux.DurationSnake != nil {
+	// 	g.Duration = aux.DurationSnake
+	// }
+
 	return nil
 }
 
@@ -73,6 +91,12 @@ type GeminiFileData struct {
 	FileUri  string `json:"fileUri,omitempty"`
 }
 
+type GeminiVideoMetadata struct {
+	Fps         float64 `json:"fps,omitempty"`
+	StartOffset string  `json:"startOffset,omitempty"`
+	EndOffset   string  `json:"endOffset,omitempty"`
+}
+
 type GeminiPart struct {
 	Text                string                         `json:"text,omitempty"`
 	Thought             bool                           `json:"thought,omitempty"`
@@ -80,6 +104,7 @@ type GeminiPart struct {
 	FunctionCall        *FunctionCall                  `json:"functionCall,omitempty"`
 	FunctionResponse    *FunctionResponse              `json:"functionResponse,omitempty"`
 	FileData            *GeminiFileData                `json:"fileData,omitempty"`
+	VideoMetadata       *GeminiVideoMetadata           `json:"videoMetadata,omitempty"`
 	ExecutableCode      *GeminiPartExecutableCode      `json:"executableCode,omitempty"`
 	CodeExecutionResult *GeminiPartCodeExecutionResult `json:"codeExecutionResult,omitempty"`
 }
@@ -141,6 +166,8 @@ type GeminiChatGenerationConfig struct {
 	ResponseModalities []string              `json:"responseModalities,omitempty"`
 	ThinkingConfig     *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
 	SpeechConfig       json.RawMessage       `json:"speechConfig,omitempty"` // RawMessage to allow flexible speech config
+	// RawMessage to allow flexible speech config
+	MediaResolution *MediaResolution `json:"mediaResolution,omitempty"` // 媒体分辨率配置
 }
 
 type GeminiChatCandidate struct {
