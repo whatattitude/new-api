@@ -2,8 +2,9 @@ package setting
 
 import (
 	"encoding/json"
-	"one-api/common"
 	"sync"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 var userUsableGroups = map[string]string{
@@ -29,7 +30,7 @@ func UserUsableGroups2JSONString() string {
 
 	jsonBytes, err := json.Marshal(userUsableGroups)
 	if err != nil {
-		common.SysError("error marshalling user groups: " + err.Error())
+		common.SysLog("error marshalling user groups: " + err.Error())
 	}
 	return string(jsonBytes)
 }

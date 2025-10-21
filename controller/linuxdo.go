@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"one-api/common"
-	"one-api/model"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -220,21 +221,29 @@ func LinuxdoOAuth(c *gin.Context) {
 		}
 	} else {
 		if common.RegisterEnabled {
-			user.Username = "linuxdo_" + strconv.Itoa(model.GetMaxUserId()+1)
-			user.DisplayName = linuxdoUser.Name
-			user.Role = common.RoleCommonUser
-			user.Status = common.UserStatusEnabled
+			if linuxdoUser.TrustLevel >= common.LinuxDOMinimumTrustLevel {
+				user.Username = "linuxdo_" + strconv.Itoa(model.GetMaxUserId()+1)
+				user.DisplayName = linuxdoUser.Name
+				user.Role = common.RoleCommonUser
+				user.Status = common.UserStatusEnabled
 
-			affCode := session.Get("aff")
-			inviterId := 0
-			if affCode != nil {
-				inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
-			}
+				affCode := session.Get("aff")
+				inviterId := 0
+				if affCode != nil {
+					inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
+				}
 
-			if err := user.Insert(inviterId); err != nil {
+				if err := user.Insert(inviterId); err != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"success": false,
+						"message": err.Error(),
+					})
+					return
+				}
+			} else {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
-					"message": err.Error(),
+					"message": "Linux DO 信任等级未达到管理员设置的最低信任等级",
 				})
 				return
 			}
