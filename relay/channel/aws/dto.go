@@ -39,8 +39,7 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 	// check header anthropic-beta
 	anthropicBetaValues := requestHeader.Get("anthropic-beta")
 	if len(anthropicBetaValues) > 0 {
-		var tempArray []string
-		tempArray = strings.Split(anthropicBetaValues, ",")
+		tempArray := strings.Split(anthropicBetaValues, ",")
 		if len(tempArray) > 0 {
 			betaJson, err := json.Marshal(tempArray)
 			if err != nil {
@@ -79,12 +78,37 @@ type NovaInferenceConfig struct {
 
 // 转换OpenAI请求为Nova格式
 func convertToNovaRequest(req *dto.GeneralOpenAIRequest) *NovaRequest {
-	novaMessages := make([]NovaMessage, len(req.Messages))
-	for i, msg := range req.Messages {
-		novaMessages[i] = NovaMessage{
-			Role:    msg.Role,
-			Content: []NovaContent{{Text: msg.StringContent()}},
+	novaMessages := make([]NovaMessage, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		textContent := msg.StringContent()
+		// AWS Bedrock 要求文本内容块不能为空
+		// 如果内容为空，跳过该消息或提供占位符
+		if textContent == "" {
+			// 检查消息是否有其他内容（如图片、工具调用等）
+			parsedContent := msg.ParseContent()
+			hasNonTextContent := false
+			for _, content := range parsedContent {
+				if content.Type != "text" {
+					hasNonTextContent = true
+					break
+				}
+			}
+			// 如果只有工具调用，跳过该消息
+			if len(msg.ToolCalls) > 0 && !hasNonTextContent {
+				continue
+			}
+			// 如果有非文本内容但没有文本，提供一个占位符
+			if hasNonTextContent {
+				textContent = " " // 使用空格作为占位符，满足非空要求
+			} else {
+				// 完全空的消息，跳过
+				continue
+			}
 		}
+		novaMessages = append(novaMessages, NovaMessage{
+			Role:    msg.Role,
+			Content: []NovaContent{{Text: textContent}},
+		})
 	}
 
 	novaReq := &NovaRequest{
