@@ -319,13 +319,14 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		if err2 != nil {
 			return
 		}
-		if channelModel.Type != constant.ChannelTypeVertexAi {
+		if channelModel.Type != constant.ChannelTypeVertexAi && channelModel.Type != constant.ChannelTypeGemini {
 			return
 		}
 		baseURL := constant.ChannelBaseURLs[channelModel.Type]
 		if channelModel.GetBaseURL() != "" {
 			baseURL = channelModel.GetBaseURL()
 		}
+		proxy := channelModel.GetSetting().Proxy
 		adaptor := GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channelModel.Type)))
 		if adaptor == nil {
 			return
@@ -333,7 +334,7 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		resp, err2 := adaptor.FetchTask(baseURL, channelModel.Key, map[string]any{
 			"task_id": originTask.TaskID,
 			"action":  originTask.Action,
-		})
+		}, proxy)
 		if err2 != nil || resp == nil {
 			return
 		}
@@ -351,7 +352,10 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 				originTask.Progress = ti.Progress
 			}
 			if ti.Url != "" {
-				originTask.FailReason = ti.Url
+				if strings.HasPrefix(ti.Url, "data:") {
+				} else {
+					originTask.FailReason = ti.Url
+				}
 			}
 			_ = originTask.Update()
 			var raw map[string]any
@@ -379,18 +383,20 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 			case model.TaskStatusQueued, model.TaskStatusSubmitted:
 				status = "queued"
 			}
-			out := map[string]any{
-				"error":    nil,
-				"format":   format,
-				"metadata": nil,
-				"status":   status,
-				"task_id":  originTask.TaskID,
-				"url":      originTask.FailReason,
+			if !strings.HasPrefix(c.Request.RequestURI, "/v1/videos/") {
+				out := map[string]any{
+					"error":    nil,
+					"format":   format,
+					"metadata": nil,
+					"status":   status,
+					"task_id":  originTask.TaskID,
+					"url":      originTask.FailReason,
+				}
+				respBody, _ = json.Marshal(dto.TaskResponse[any]{
+					Code: "success",
+					Data: out,
+				})
 			}
-			respBody, _ = json.Marshal(dto.TaskResponse[any]{
-				Code: "success",
-				Data: out,
-			})
 		}
 	}()
 

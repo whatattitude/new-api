@@ -141,6 +141,39 @@ func (r *GeminiChatRequest) SetTools(tools []GeminiChatTool) {
 type GeminiThinkingConfig struct {
 	IncludeThoughts bool `json:"includeThoughts,omitempty"`
 	ThinkingBudget  *int `json:"thinkingBudget,omitempty"`
+	// TODO Conflict with thinkingbudget.
+	ThinkingLevel string `json:"thinkingLevel,omitempty"`
+}
+
+// UnmarshalJSON allows GeminiThinkingConfig to accept both snake_case and camelCase fields.
+func (c *GeminiThinkingConfig) UnmarshalJSON(data []byte) error {
+	type Alias GeminiThinkingConfig
+	var aux struct {
+		Alias
+		IncludeThoughtsSnake *bool  `json:"include_thoughts,omitempty"`
+		ThinkingBudgetSnake  *int   `json:"thinking_budget,omitempty"`
+		ThinkingLevelSnake   string `json:"thinking_level,omitempty"`
+	}
+
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	*c = GeminiThinkingConfig(aux.Alias)
+
+	if aux.IncludeThoughtsSnake != nil {
+		c.IncludeThoughts = *aux.IncludeThoughtsSnake
+	}
+
+	if aux.ThinkingBudgetSnake != nil {
+		c.ThinkingBudget = aux.ThinkingBudgetSnake
+	}
+
+	if aux.ThinkingLevelSnake != "" {
+		c.ThinkingLevel = aux.ThinkingLevelSnake
+	}
+
+	return nil
 }
 
 func (c *GeminiThinkingConfig) SetThinkingBudget(budget int) {
@@ -200,8 +233,12 @@ type FunctionCall struct {
 }
 
 type GeminiFunctionResponse struct {
-	Name     string                 `json:"name"`
-	Response map[string]interface{} `json:"response"`
+	Name         string                 `json:"name"`
+	Response     map[string]interface{} `json:"response"`
+	WillContinue json.RawMessage        `json:"willContinue,omitempty"`
+	Scheduling   json.RawMessage        `json:"scheduling,omitempty"`
+	Parts        json.RawMessage        `json:"parts,omitempty"`
+	ID           json.RawMessage        `json:"id,omitempty"`
 }
 
 type GeminiPartExecutableCode struct {
@@ -225,12 +262,48 @@ type GeminiVideoMetadata struct {
 	EndOffset   string  `json:"endOffset,omitempty"`
 }
 
+// UnmarshalJSON allows GeminiVideoMetadata to accept both snake_case and camelCase fields.
+func (v *GeminiVideoMetadata) UnmarshalJSON(data []byte) error {
+	type Alias GeminiVideoMetadata
+	var aux struct {
+		Alias
+		StartOffsetSnake string `json:"start_offset,omitempty"`
+		EndOffsetSnake   string `json:"end_offset,omitempty"`
+	}
+
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	*v = GeminiVideoMetadata(aux.Alias)
+
+	// Prioritize snake_case if present
+	if aux.StartOffsetSnake != "" {
+		v.StartOffset = aux.StartOffsetSnake
+	} else if aux.StartOffset != "" {
+		v.StartOffset = aux.StartOffset
+	}
+
+	if aux.EndOffsetSnake != "" {
+		v.EndOffset = aux.EndOffsetSnake
+	} else if aux.EndOffset != "" {
+		v.EndOffset = aux.EndOffset
+	}
+
+	// Fps field is already populated via aux.Alias (same name in both formats)
+
+	return nil
+}
+
 type GeminiPart struct {
-	Text                string                         `json:"text,omitempty"`
-	Thought             bool                           `json:"thought,omitempty"`
-	InlineData          *GeminiInlineData              `json:"inlineData,omitempty"`
-	FunctionCall        *FunctionCall                  `json:"functionCall,omitempty"`
-	FunctionResponse    *GeminiFunctionResponse        `json:"functionResponse,omitempty"`
+	Text             string                  `json:"text,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
+	InlineData       *GeminiInlineData       `json:"inlineData,omitempty"`
+	FunctionCall     *FunctionCall           `json:"functionCall,omitempty"`
+	ThoughtSignature json.RawMessage         `json:"thoughtSignature,omitempty"`
+	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	// Optional. Media resolution for the input media.
+	MediaResolution     json.RawMessage                `json:"mediaResolution,omitempty"`
 	FileData            *GeminiFileData                `json:"fileData,omitempty"`
 	VideoMetadata       *GeminiVideoMetadata           `json:"videoMetadata,omitempty"`
 	ExecutableCode      *GeminiPartExecutableCode      `json:"executableCode,omitempty"`
