@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"sort"
 	"strings"
@@ -188,6 +189,84 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+// GetHashSatisfiedChannel 基于 requestId 进行 hash 选择渠道
+// 确保相同的 requestId 总是选择相同的渠道
+func GetHashSatisfiedChannel(group string, model string, retry int, requestId string) (*Channel, error) {
+	// if memory cache is disabled, get channel directly from database
+	if !common.MemoryCacheEnabled {
+		return GetChannel(group, model, retry)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	// 对于 hash 调度，只使用精确匹配，确保一致性
+	// 不进行规范化模型名匹配，避免因匹配方式不同导致的不一致
+	channels := group2model2channels[group][model]
+
+	if len(channels) == 0 {
+		return nil, nil
+	}
+
+	if len(channels) == 1 {
+		if channel, ok := channelsIDM[channels[0]]; ok {
+			return channel, nil
+		}
+		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
+	}
+
+	// 对于 hash 调度，忽略 retry 参数，始终从所有可用渠道中选择
+	// 这样可以确保相同的 requestId 总是选择相同的渠道
+	var targetChannels []*Channel
+	for _, channelId := range channels {
+		if channel, ok := channelsIDM[channelId]; ok {
+			targetChannels = append(targetChannels, channel)
+		} else {
+			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+		}
+	}
+
+	if len(targetChannels) == 0 {
+		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s", group, model))
+	}
+
+	// 如果只有一个渠道，直接返回
+	if len(targetChannels) == 1 {
+		return targetChannels[0], nil
+	}
+
+	// 关键：对渠道列表按 ID 排序，确保每次获取的渠道列表顺序一致
+	// 这样才能保证相同的 hash 值总是选择相同的渠道
+	sort.Slice(targetChannels, func(i, j int) bool {
+		return targetChannels[i].Id < targetChannels[j].Id
+	})
+
+	// 构建渠道 ID 列表用于日志
+	channelIds := make([]int, len(targetChannels))
+	for i, ch := range targetChannels {
+		channelIds[i] = ch.Id
+	}
+
+	// 使用 hash 函数选择渠道
+	// 使用原始 model 进行 hash，因为只使用精确匹配，所以 model 和渠道列表来源一致
+	hashInput := fmt.Sprintf("%s:%s:%s", group, model, requestId)
+	h := fnv.New32a()
+	h.Write([]byte(hashInput))
+	hashValue := h.Sum32()
+	
+	// 使用 hash 值对渠道数量取模来选择渠道
+	selectedIndex := int(hashValue) % len(targetChannels)
+	selectedChannel := targetChannels[selectedIndex]
+
+	// 输出详细日志用于分析
+	common.SysLog(fmt.Sprintf(
+		"[Hash调度] group=%s, model=%s, requestId=%s | hashInput=%s | hashValue=%d | channelCount=%d | channelIds=%v | selectedIndex=%d | selectedChannelId=%d",
+		group, model, requestId, hashInput, hashValue, len(targetChannels), channelIds, selectedIndex, selectedChannel.Id,
+	))
+
+	return selectedChannel, nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

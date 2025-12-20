@@ -68,6 +68,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
+	// 注意：hash 调度检查在 getChannel 函数中直接检查 X-Request-Id header
+
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
@@ -269,20 +271,53 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 }
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
-	if info.ChannelMeta == nil {
+	// 检查是否已经通过 context 指定了渠道（比如通过 URL 参数或中间件）
+	// 如果 channel_id 存在，说明已经指定了渠道，直接返回
+	if channelId := c.GetInt("channel_id"); channelId > 0 {
+		logger.LogInfo(c, fmt.Sprintf("[getChannel] 已指定渠道 #%d，跳过渠道选择", channelId))
 		autoBan := c.GetBool("auto_ban")
 		autoBanInt := 1
 		if !autoBan {
 			autoBanInt = 0
 		}
 		return &model.Channel{
-			Id:      c.GetInt("channel_id"),
+			Id:      channelId,
 			Type:    c.GetInt("channel_type"),
 			Name:    c.GetString("channel_name"),
 			AutoBan: &autoBanInt,
 		}, nil
 	}
-	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
+
+	// 需要选择渠道：检查是否携带 X-Request-Id header，如果携带则使用 hash 调度
+	var channel *model.Channel
+	var selectGroup string
+	var err error
+
+	customRequestId := c.GetHeader("X-Request-Id")
+	if customRequestId == "" {
+		// 也支持小写的 request_id header
+		customRequestId = c.GetHeader("request_id")
+	}
+	
+	// 输出调试日志，检查 header 是否存在
+	logger.LogInfo(c, fmt.Sprintf("[渠道选择] 检查 X-Request-Id header，值: '%s' (空字符串表示未携带)", customRequestId))
+	
+	if customRequestId != "" {
+		// 使用 hash 调度
+		logger.LogInfo(c, fmt.Sprintf("[Hash调度] 检测到 X-Request-Id header，使用 hash 调度: %s", customRequestId))
+		channel, selectGroup, err = service.CacheGetHashSatisfiedChannel(retryParam, customRequestId)
+		if err != nil {
+			logger.LogWarn(c, fmt.Sprintf("[Hash调度] hash 调度失败，回退到随机调度: %s", err.Error()))
+			// 如果 hash 调度失败，回退到随机调度
+			channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+		} else {
+			logger.LogInfo(c, fmt.Sprintf("[Hash调度] 使用 hash 调度选择渠道 #%d (分组: %s)", channel.Id, selectGroup))
+		}
+	} else {
+		// 使用原来的随机调度
+		logger.LogInfo(c, "[渠道选择] 未检测到 X-Request-Id header，使用随机调度")
+		channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+	}
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 

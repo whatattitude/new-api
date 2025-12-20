@@ -97,12 +97,35 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
-				channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+				
+				// 检查是否携带 X-Request-Id header，如果携带则使用 hash 调度
+				customRequestId := c.GetHeader("X-Request-Id")
+				if customRequestId == "" {
+					customRequestId = c.GetHeader("request_id")
+				}
+				
+				retryParam := &service.RetryParam{
 					Ctx:        c,
 					ModelName:  modelRequest.Model,
 					TokenGroup: usingGroup,
 					Retry:      common.GetPointer(0),
-				})
+				}
+				
+				if customRequestId != "" {
+					// 使用 hash 调度
+					common.SysLog(fmt.Sprintf("[Distribute中间件] 检测到 X-Request-Id header，使用 hash 调度: %s", customRequestId))
+					channel, selectGroup, err = service.CacheGetHashSatisfiedChannel(retryParam, customRequestId)
+					if err != nil {
+						common.SysLog(fmt.Sprintf("[Distribute中间件] hash 调度失败，回退到随机调度: %s", err.Error()))
+						// 如果 hash 调度失败，回退到随机调度
+						channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+					} else {
+						common.SysLog(fmt.Sprintf("[Distribute中间件] hash 调度成功，选择渠道 #%d (分组: %s)", channel.Id, selectGroup))
+					}
+				} else {
+					// 使用随机调度
+					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+				}
 				if err != nil {
 					showGroup := usingGroup
 					if usingGroup == "auto" {

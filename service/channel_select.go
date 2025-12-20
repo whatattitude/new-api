@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -160,3 +161,62 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	}
 	return channel, selectGroup, nil
 }
+
+// CacheGetHashSatisfiedChannel 基于 request_id 进行 hash 调度来选择渠道
+// 确保相同的 request_id 总是调度到相同的渠道
+func CacheGetHashSatisfiedChannel(param *RetryParam, requestId string) (*model.Channel, string, error) {
+	selectGroup := param.TokenGroup
+	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
+
+	if param.TokenGroup == "auto" {
+		if len(setting.GetAutoGroups()) == 0 {
+			return nil, selectGroup, errors.New("auto groups is not enabled")
+		}
+		autoGroups := GetUserAutoGroup(userGroup)
+
+		// 对于 hash 调度，group 的选择逻辑和原本一样（基于调度 key 绑定的分组）
+		// 只是在确定的 group 内使用 hash 来选择渠道
+		startGroupIndex := 0
+		if lastGroupIndex, exists := common.GetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex); exists {
+			if idx, ok := lastGroupIndex.(int); ok {
+				startGroupIndex = idx
+			}
+		}
+
+		for i := startGroupIndex; i < len(autoGroups); i++ {
+			autoGroup := autoGroups[i]
+			logger.LogDebug(param.Ctx, fmt.Sprintf("Hash selecting group: %s, requestId: %s", autoGroup, requestId))
+
+			// 在确定的 group 内使用 hash 选择渠道
+			logger.LogInfo(param.Ctx, fmt.Sprintf("[Hash调度开始] group=%s, model=%s, requestId=%s", autoGroup, param.ModelName, requestId))
+			channel, _ := model.GetHashSatisfiedChannel(autoGroup, param.ModelName, 0, requestId)
+			if channel == nil {
+				logger.LogDebug(param.Ctx, fmt.Sprintf("No available channel in group %s for model %s, trying next group", autoGroup, param.ModelName))
+				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
+				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)
+				param.SetRetry(0)
+				continue
+			}
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
+			selectGroup = autoGroup
+			logger.LogInfo(param.Ctx, fmt.Sprintf("[Hash调度完成] group=%s, model=%s, requestId=%s, selectedChannelId=%d", autoGroup, param.ModelName, requestId, channel.Id))
+			
+			// hash 调度时，保持在同一分组，不切换分组
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i)
+			return channel, selectGroup, nil
+		}
+	} else {
+		// hash 调度忽略 retry 参数，始终使用 0（会从所有渠道中选择）
+		logger.LogInfo(param.Ctx, fmt.Sprintf("[Hash调度开始] group=%s, model=%s, requestId=%s", param.TokenGroup, param.ModelName, requestId))
+		channel, channelErr := model.GetHashSatisfiedChannel(param.TokenGroup, param.ModelName, 0, requestId)
+		if channelErr != nil {
+			return nil, param.TokenGroup, channelErr
+		}
+		if channel != nil {
+			logger.LogInfo(param.Ctx, fmt.Sprintf("[Hash调度完成] group=%s, model=%s, requestId=%s, selectedChannelId=%d", param.TokenGroup, param.ModelName, requestId, channel.Id))
+			return channel, selectGroup, nil
+		}
+	}
+	return nil, selectGroup, errors.New("no available channel found")
+}
+
