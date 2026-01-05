@@ -55,6 +55,7 @@ export const useSidebar = () => {
     personal: {
       enabled: true,
       topup: true,
+      invoice: true,
       personal: true,
     },
     admin: {
@@ -63,6 +64,7 @@ export const useSidebar = () => {
       models: true,
       redemption: true,
       user: true,
+      'admin-invoice': true,
       setting: true,
     },
   };

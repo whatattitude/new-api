@@ -36,6 +36,8 @@ const routerMap = {
   token: '/console/token',
   redemption: '/console/redemption',
   topup: '/console/topup',
+  invoice: '/console/invoice',
+  'admin-invoice': '/console/admin-invoice',
   user: '/console/user',
   log: '/console/log',
   midjourney: '/console/midjourney',
@@ -128,6 +130,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/topup',
       },
       {
+        text: t('发票管理'),
+        itemKey: 'invoice',
+        to: '/console/invoice',
+      },
+      {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
@@ -167,6 +174,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('用户管理'),
         itemKey: 'user',
         to: '/user',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('发票管理'),
+        itemKey: 'admin-invoice',
+        to: '/console/admin-invoice',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

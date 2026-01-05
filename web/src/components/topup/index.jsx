@@ -192,6 +192,13 @@ const TopUp = () => {
       showError('充值数量不能小于' + minTopUp);
       return;
     }
+    
+    // 计算实际到账金额和赠送金额
+    const multiplier = userState?.user?.topup_multiplier || 1.0;
+    const paymentAmount = amount || 0; // 实付金额（人民币）
+    const actualAmount = topUpCount * multiplier; // 实际到账（美元）= 充值数量 * 充值倍率
+    const bonusAmount = topUpCount * (multiplier - 1); // 赠送金额（美元）= 充值数量 * (倍率 - 1)
+    
     setConfirmLoading(true);
     try {
       let res;
@@ -200,12 +207,16 @@ const TopUp = () => {
         res = await API.post('/api/user/stripe/pay', {
           amount: parseInt(topUpCount),
           payment_method: 'stripe',
+          actual_amount: actualAmount,
+          bonus_amount: bonusAmount,
         });
       } else {
         // 普通支付请求
         res = await API.post('/api/user/pay', {
           amount: parseInt(topUpCount),
           payment_method: payWay,
+          actual_amount: actualAmount,
+          bonus_amount: bonusAmount,
         });
       }
 
@@ -626,6 +637,7 @@ const TopUp = () => {
         payMethods={payMethods}
         amountNumber={amount}
         discountRate={topupInfo?.discount?.[topUpCount] || 1.0}
+        topupMultiplier={userState?.user?.topup_multiplier || 1.0}
       />
 
       {/* 充值账单模态框 */}
@@ -686,6 +698,7 @@ const TopUp = () => {
               setTopUpCount={setTopUpCount}
               setSelectedPreset={setSelectedPreset}
               renderAmount={renderAmount}
+              amount={amount}
               amountLoading={amountLoading}
               payMethods={payMethods}
               preTopUp={preTopUp}

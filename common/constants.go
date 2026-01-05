@@ -205,3 +205,9 @@ const (
 	TopUpStatusSuccess = "success"
 	TopUpStatusExpired = "expired"
 )
+
+const (
+	InvoiceStatusNotApplied = "未申请" // 未申请
+	InvoiceStatusPending     = "待开"   // 待开
+	InvoiceStatusSent        = "已发送" // 已发送
+)

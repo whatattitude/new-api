@@ -29,8 +29,10 @@ const (
 var stripeAdaptor = &StripeAdaptor{}
 
 type StripePayRequest struct {
-	Amount        int64  `json:"amount"`
-	PaymentMethod string `json:"payment_method"`
+	Amount        int64   `json:"amount"`         // 充值数量（美元）
+	PaymentMethod string  `json:"payment_method"` // 支付方式
+	ActualAmount  float64 `json:"actual_amount"` // 实际到账金额（美元，已应用倍率）
+	BonusAmount   float64 `json:"bonus_amount"`   // 赠送金额（人民币）
 }
 
 type StripeAdaptor struct {
@@ -73,6 +75,22 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 	user, _ := model.GetUserById(id, false)
 	chargedMoney := GetChargedAmount(float64(req.Amount), *user)
 
+	// 计算实际到账金额和赠送金额
+	multiplier := user.TopupMultiplier
+	if multiplier <= 0 {
+		multiplier = 1.0
+	}
+	actualAmount := req.ActualAmount
+	bonusAmount := req.BonusAmount
+	
+	// 如果前端没有传递，则后端计算
+	if actualAmount <= 0 {
+		actualAmount = float64(req.Amount) * multiplier
+	}
+	if bonusAmount <= 0 {
+		bonusAmount = chargedMoney * (multiplier - 1)
+	}
+
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
 
@@ -87,6 +105,8 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		UserId:        id,
 		Amount:        req.Amount,
 		Money:         chargedMoney,
+		ActualAmount:  actualAmount, // 实际到账金额（美元，已应用倍率）
+		BonusAmount:   bonusAmount, // 赠送金额（人民币）
 		TradeNo:       referenceId,
 		PaymentMethod: PaymentMethodStripe,
 		CreateTime:    time.Now().Unix(),

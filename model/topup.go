@@ -14,13 +14,17 @@ import (
 type TopUp struct {
 	Id            int     `json:"id"`
 	UserId        int     `json:"user_id" gorm:"index"`
-	Amount        int64   `json:"amount"`
-	Money         float64 `json:"money"`
+	Amount        int64   `json:"amount"`                                     // 充值数量（美元）
+	Money         float64 `json:"money"`                                      // 实付金额（人民币）
+	ActualAmount  float64 `json:"actual_amount" gorm:"type:double;default:0"` // 实际到账金额（美元，已应用倍率）
+	BonusAmount   float64 `json:"bonus_amount" gorm:"type:double;default:0"`  // 赠送金额（人民币）
 	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
 	CreateTime    int64   `json:"create_time"`
 	CompleteTime  int64   `json:"complete_time"`
 	Status        string  `json:"status"`
+	InvoiceStatus string  `json:"invoice_status" gorm:"type:varchar(20);default:'未申请'"` // 发票状态：未申请、待开、已发送
+	InvoiceId     int     `json:"invoice_id" gorm:"default:0;index"`                    // 关联的发票ID
 }
 
 func (topUp *TopUp) Insert() error {
@@ -85,8 +89,33 @@ func Recharge(referenceId string, customerId string) (err error) {
 			return err
 		}
 
-		quota = topUp.Money * common.QuotaPerUnit
-		err = tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{"stripe_customer": customerId, "quota": gorm.Expr("quota + ?", quota)}).Error
+		// 使用订单中保存的实际到账金额和赠送金额
+		actualAmount := topUp.ActualAmount
+		bonusAmount := topUp.BonusAmount
+
+		// 如果订单中没有保存，则计算（兼容旧订单）
+		if actualAmount <= 0 {
+			var user User
+			if err := tx.Where("id = ?", topUp.UserId).First(&user).Error; err != nil {
+				return err
+			}
+			multiplier := user.TopupMultiplier
+			if multiplier <= 0 {
+				multiplier = 1.0
+			}
+			actualAmount = topUp.Money * multiplier
+			bonusAmount = actualAmount - topUp.Money
+		}
+
+		// 计算额度：使用实际到账金额（美元）转换为额度
+		quota = actualAmount * common.QuotaPerUnit
+
+		// 更新用户额度和累计赠送金额
+		err = tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{
+			"stripe_customer":    customerId,
+			"quota":              gorm.Expr("quota + ?", quota),
+			"total_bonus_amount": gorm.Expr("total_bonus_amount + ?", bonusAmount),
+		}).Error
 		if err != nil {
 			return err
 		}
@@ -98,7 +127,8 @@ func Recharge(referenceId string, customerId string) (err error) {
 		return errors.New("充值失败，" + err.Error())
 	}
 
-	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount))
+	// 记录日志：使用实付金额（Money）作为支付金额
+	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%.2f", logger.FormatQuota(int(quota)), topUp.Money))
 
 	return nil
 }
@@ -265,17 +295,35 @@ func ManualCompleteTopUp(tradeNo string) error {
 			return errors.New("订单状态不是待支付，无法补单")
 		}
 
-		// 计算应充值额度：
-		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
-		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
-		if topUp.PaymentMethod == "stripe" {
-			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())
-		} else {
-			dAmount := decimal.NewFromInt(topUp.Amount)
-			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-			quotaToAdd = int(dAmount.Mul(dQuotaPerUnit).IntPart())
+		// 使用订单中保存的实际到账金额和赠送金额
+		actualAmount := topUp.ActualAmount
+		bonusAmount := topUp.BonusAmount
+
+		// 如果订单中没有保存，则计算（兼容旧订单）
+		if actualAmount <= 0 {
+			var user User
+			if err := tx.Where("id = ?", topUp.UserId).First(&user).Error; err != nil {
+				return err
+			}
+			multiplier := user.TopupMultiplier
+			if multiplier <= 0 {
+				multiplier = 1.0
+			}
+			if topUp.PaymentMethod == "stripe" {
+				actualAmount = topUp.Money * multiplier
+				bonusAmount = actualAmount - topUp.Money
+			} else {
+				// Amount 是美元数量
+				baseMoney := float64(topUp.Amount)
+				actualAmount = baseMoney * multiplier
+				bonusAmount = actualAmount - baseMoney
+			}
 		}
+
+		// 计算应充值额度：使用实际到账金额（美元）转换为额度
+		dActualAmount := decimal.NewFromFloat(actualAmount)
+		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quotaToAdd = int(dActualAmount.Mul(dQuotaPerUnit).IntPart())
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
@@ -287,8 +335,11 @@ func ManualCompleteTopUp(tradeNo string) error {
 			return err
 		}
 
-		// 增加用户额度（立即写库，保持一致性）
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+		// 增加用户额度并更新累计赠送金额（立即写库，保持一致性）
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{
+			"quota":              gorm.Expr("quota + ?", quotaToAdd),
+			"total_bonus_amount": gorm.Expr("total_bonus_amount + ?", bonusAmount),
+		}).Error; err != nil {
 			return err
 		}
 
@@ -335,23 +386,38 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 			return err
 		}
 
-		// Creem 直接使用 Amount 作为充值额度（整数）
-		quota = topUp.Amount
+		// 使用订单中保存的实际到账金额和赠送金额
+		actualAmount := topUp.ActualAmount
+		bonusAmount := topUp.BonusAmount
+
+		// 获取用户信息（用于邮箱更新）
+		var user User
+		err = tx.Where("id = ?", topUp.UserId).First(&user).Error
+		if err != nil {
+			return err
+		}
+
+		// 如果订单中没有保存，则计算（兼容旧订单）
+		if actualAmount <= 0 {
+			multiplier := user.TopupMultiplier
+			if multiplier <= 0 {
+				multiplier = 1.0
+			}
+			actualAmount = topUp.Money * multiplier
+			bonusAmount = actualAmount - topUp.Money
+		}
+
+		// Creem 使用实际到账金额转换为额度
+		quota = int64(actualAmount * common.QuotaPerUnit)
 
 		// 构建更新字段，优先使用邮箱，如果邮箱为空则使用用户名
 		updateFields := map[string]interface{}{
-			"quota": gorm.Expr("quota + ?", quota),
+			"quota":              gorm.Expr("quota + ?", quota),
+			"total_bonus_amount": gorm.Expr("total_bonus_amount + ?", bonusAmount),
 		}
 
 		// 如果有客户邮箱，尝试更新用户邮箱（仅当用户邮箱为空时）
 		if customerEmail != "" {
-			// 先检查用户当前邮箱是否为空
-			var user User
-			err = tx.Where("id = ?", topUp.UserId).First(&user).Error
-			if err != nil {
-				return err
-			}
-
 			// 如果用户邮箱为空，则更新为支付时使用的邮箱
 			if user.Email == "" {
 				updateFields["email"] = customerEmail
@@ -370,6 +436,8 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		return errors.New("充值失败，" + err.Error())
 	}
 
+	// 记录日志：使用实付金额（Money）作为支付金额
+	// 记录日志：使用实付金额（Money）作为支付金额
 	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money))
 
 	return nil

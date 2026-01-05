@@ -79,6 +79,7 @@ const EditUserModal = (props) => {
     quota: 0,
     group: 'default',
     remark: '',
+    topup_multiplier: 1.0,
   });
 
   const fetchGroups = async () => {
@@ -294,6 +295,20 @@ const EditUserModal = (props) => {
                           step={500000}
                           extraText={renderQuotaWithPrompt(values.quota || 0)}
                           rules={[{ required: true, message: t('请输入额度') }]}
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+
+                      <Col span={10}>
+                        <Form.InputNumber
+                          field='topup_multiplier'
+                          label={t('充值倍率')}
+                          placeholder={t('请输入充值倍率，例如 1.2 表示充值1元等于1.2元')}
+                          min={0.1}
+                          max={10}
+                          step={0.1}
+                          precision={2}
+                          extraText={t('充值倍率：充值金额将乘以该倍率，例如 1.2 表示充值1元等于1.2元')}
                           style={{ width: '100%' }}
                         />
                       </Col>

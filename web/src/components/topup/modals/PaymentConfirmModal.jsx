@@ -39,11 +39,19 @@ const PaymentConfirmModal = ({
   // 新增：用于显示折扣明细
   amountNumber,
   discountRate,
+  topupMultiplier, // 充值倍率
 }) => {
   const hasDiscount =
     discountRate && discountRate > 0 && discountRate < 1 && amountNumber > 0;
   const originalAmount = hasDiscount ? amountNumber / discountRate : 0;
   const discountAmount = hasDiscount ? originalAmount - amountNumber : 0;
+  
+  // 计算赠送金额和实际到账
+  // topUpCount 是充值数量（美元），amountNumber 是实付金额（人民币）
+  const multiplier = topupMultiplier || 1.0;
+  const topUpCountValue = topUpCount || 0; // 充值数量（美元）
+  const bonusAmount = topUpCountValue > 0 ? topUpCountValue * (multiplier - 1) : 0; // 赠送金额（美元）= 充值数量 * (倍率 - 1)
+  const actualAmount = topUpCountValue > 0 ? topUpCountValue * multiplier : 0; // 实际到账（美元）= 充值数量 * 倍率
   return (
     <Modal
       title={
@@ -106,6 +114,26 @@ const PaymentConfirmModal = ({
                   </Text>
                   <Text className='text-emerald-600 dark:text-emerald-400'>
                     {`- ${discountAmount.toFixed(2)} ${t('元')}`}
+                  </Text>
+                </div>
+              </>
+            )}
+            {bonusAmount > 0 && !amountLoading && (
+              <>
+                <div className='flex justify-between items-center'>
+                  <Text className='text-slate-500 dark:text-slate-400'>
+                    {t('赠送金额')}：
+                  </Text>
+                  <Text className='text-emerald-600 dark:text-emerald-400'>
+                    {`+ $${bonusAmount.toFixed(2)}`}
+                  </Text>
+                </div>
+                <div className='flex justify-between items-center'>
+                  <Text strong className='text-slate-700 dark:text-slate-200'>
+                    {t('实际到账')}：
+                  </Text>
+                  <Text strong className='text-emerald-600 dark:text-emerald-400 font-bold'>
+                    {`$${actualAmount.toFixed(2)}`}
                   </Text>
                 </div>
               </>

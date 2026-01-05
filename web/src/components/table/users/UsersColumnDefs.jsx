@@ -31,6 +31,8 @@ import {
 import { IconMore } from '@douyinfe/semi-icons';
 import { renderGroup, renderNumber, renderQuota } from '../../../helpers';
 
+const { Text } = Typography;
+
 /**
  * Render user role
  */
@@ -333,6 +335,22 @@ export const getUsersColumns = ({
       dataIndex: 'role',
       render: (text, record, index) => {
         return <div>{renderRole(text, t)}</div>;
+      },
+    },
+    {
+      title: t('充值倍率'),
+      dataIndex: 'topup_multiplier',
+      render: (text, record) => {
+        const multiplier = record.topup_multiplier || 1.0;
+        return <Tag color='blue' shape='circle'>{multiplier.toFixed(2)}x</Tag>;
+      },
+    },
+    {
+      title: t('累计赠送'),
+      dataIndex: 'total_bonus_amount',
+      render: (text, record) => {
+        const bonus = record.total_bonus_amount || 0;
+        return <Text type='success'>¥{bonus.toFixed(2)}</Text>;
       },
     },
     {

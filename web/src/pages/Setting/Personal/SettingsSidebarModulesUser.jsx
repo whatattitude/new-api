@@ -94,6 +94,7 @@ export default function SettingsSidebarModulesUser() {
       defaultConfig.personal = {
         enabled: true,
         topup: isSidebarModuleAllowed('personal', 'topup'),
+        invoice: isSidebarModuleAllowed('personal', 'invoice'),
         personal: isSidebarModuleAllowed('personal', 'personal'),
       };
     }
@@ -308,6 +309,7 @@ export default function SettingsSidebarModulesUser() {
       description: t('用户个人功能'),
       modules: [
         { key: 'topup', title: t('钱包管理'), description: t('余额充值管理') },
+        { key: 'invoice', title: t('发票管理'), description: t('发票申请与管理') },
         {
           key: 'personal',
           title: t('个人设置'),

@@ -47,6 +47,8 @@ type User struct {
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	TopupMultiplier  float64        `json:"topup_multiplier" gorm:"type:decimal(10,2);default:1.0"` // 充值倍率，默认1.0
+	TotalBonusAmount float64        `json:"total_bonus_amount" gorm:"type:decimal(10,2);default:0"` // 累计赠送金额
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -458,11 +460,12 @@ func (user *User) Edit(updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"quota":        newUser.Quota,
-		"remark":       newUser.Remark,
+		"username":         newUser.Username,
+		"display_name":     newUser.DisplayName,
+		"group":            newUser.Group,
+		"quota":            newUser.Quota,
+		"remark":           newUser.Remark,
+		"topup_multiplier": newUser.TopupMultiplier,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

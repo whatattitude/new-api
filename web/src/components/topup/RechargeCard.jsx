@@ -67,6 +67,7 @@ const RechargeCard = ({
   setTopUpCount,
   setSelectedPreset,
   renderAmount,
+  amount,
   amountLoading,
   payMethods,
   preTopUp,
@@ -135,7 +136,7 @@ const RechargeCard = ({
                 </div>
 
                 {/* 统计数据 */}
-                <div className='grid grid-cols-3 gap-6 mt-4'>
+                <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-4'>
                   {/* 当前余额 */}
                   <div className='text-center'>
                     <div
@@ -182,6 +183,81 @@ const RechargeCard = ({
                         }}
                       >
                         {t('历史消耗')}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {/* 累计充值 */}
+                  <div className='text-center'>
+                    <div
+                      className='text-base sm:text-2xl font-bold mb-2'
+                      style={{ color: 'white' }}
+                    >
+                      ¥{(userState?.user?.total_topup_amount || 0).toFixed(2)}
+                    </div>
+                    <div className='flex items-center justify-center text-sm'>
+                      <Coins
+                        size={14}
+                        className='mr-1'
+                        style={{ color: 'rgba(255,255,255,0.8)' }}
+                      />
+                      <Text
+                        style={{
+                          color: 'rgba(255,255,255,0.8)',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {t('累计充值')}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {/* 累计赠送 */}
+                  <div className='text-center'>
+                    <div
+                      className='text-base sm:text-2xl font-bold mb-2'
+                      style={{ color: 'white' }}
+                    >
+                      ¥{(userState?.user?.total_bonus_amount || 0).toFixed(2)}
+                    </div>
+                    <div className='flex items-center justify-center text-sm'>
+                      <IconGift
+                        size={14}
+                        className='mr-1'
+                        style={{ color: 'rgba(255,255,255,0.8)' }}
+                      />
+                      <Text
+                        style={{
+                          color: 'rgba(255,255,255,0.8)',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {t('累计赠送')}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {/* 充值倍率 */}
+                  <div className='text-center'>
+                    <div
+                      className='text-base sm:text-2xl font-bold mb-2'
+                      style={{ color: 'white' }}
+                    >
+                      {(userState?.user?.topup_multiplier || 1.0).toFixed(2)}x
+                    </div>
+                    <div className='flex items-center justify-center text-sm'>
+                      <IconGift
+                        size={14}
+                        className='mr-1'
+                        style={{ color: 'rgba(255,255,255,0.8)' }}
+                      />
+                      <Text
+                        style={{
+                          color: 'rgba(255,255,255,0.8)',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {t('充值倍率')}
                       </Text>
                     </div>
                   </div>
@@ -273,12 +349,42 @@ const RechargeCard = ({
                               />
                             }
                           >
-                            <Text type='secondary' className='text-red-600'>
-                              {t('实付金额：')}
-                              <span style={{ color: 'red' }}>
-                                {renderAmount()}
-                              </span>
-                            </Text>
+                            <div className='space-y-1'>
+                              <Text type='secondary' className='text-red-600'>
+                                {t('实付金额：')}
+                                <span style={{ color: 'red' }}>
+                                  {renderAmount()}
+                                </span>
+                              </Text>
+                              {(() => {
+                                const multiplier = userState?.user?.topup_multiplier || 1.0;
+                                // amount 是实付金额（人民币），topUpCount 是充值数量（美元）
+                                const topUpCountValue = topUpCount || 0; // 充值数量（美元）
+                                if (multiplier > 1 && topUpCountValue > 0) {
+                                  // 赠送金额 = 充值数量 * (倍率 - 1)（美元）
+                                  const bonusAmount = topUpCountValue * (multiplier - 1);
+                                  // 实际到账 = 充值数量 * 充值倍率（美元）
+                                  const actualAmount = topUpCountValue * multiplier;
+                                  return (
+                                    <>
+                                      <Text type='secondary' className='text-green-600 block'>
+                                        {t('赠送金额：')}
+                                        <span style={{ color: 'green' }}>
+                                          +${bonusAmount.toFixed(2)}
+                                        </span>
+                                      </Text>
+                                      <Text type='secondary' className='text-green-600 block'>
+                                        {t('实际到账：')}
+                                        <span style={{ color: 'green', fontWeight: 'bold' }}>
+                                          ${actualAmount.toFixed(2)}
+                                        </span>
+                                      </Text>
+                                    </>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
                           </Skeleton>
                         }
                         style={{ width: '100%' }}
