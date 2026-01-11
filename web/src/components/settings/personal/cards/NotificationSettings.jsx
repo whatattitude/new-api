@@ -33,7 +33,7 @@ import {
   Col,
 } from '@douyinfe/semi-ui';
 import { IconMail, IconKey, IconBell, IconLink } from '@douyinfe/semi-icons';
-import { ShieldCheck, Bell, DollarSign, Settings } from 'lucide-react';
+import { ShieldCheck, Bell, DollarSign, Settings, FileText } from 'lucide-react';
 import {
   renderQuotaWithPrompt,
   API,
@@ -51,6 +51,7 @@ const NotificationSettings = ({
   notificationSettings,
   handleNotificationSettingChange,
   saveNotificationSettings,
+  saveInvoiceInfo,
 }) => {
   const formApiRef = useRef(null);
   const [statusState] = useContext(StatusContext);
@@ -58,7 +59,7 @@ const NotificationSettings = ({
 
   // 左侧边栏设置相关状态
   const [sidebarLoading, setSidebarLoading] = useState(false);
-  const [activeTabKey, setActiveTabKey] = useState('notification');
+  const [activeTabKey, setActiveTabKey] = useState('invoice');
   const [sidebarModulesUser, setSidebarModulesUser] = useState({
     chat: {
       enabled: true,
@@ -320,6 +321,26 @@ const NotificationSettings = ({
     }
   };
 
+  // 发票信息表单提交
+  const handleInvoiceSubmit = async () => {
+    if (!formApiRef.current) {
+      Toast.error(t('表单未初始化'));
+      return;
+    }
+    
+    // 从表单获取当前值
+    const formValues = formApiRef.current.getValues();
+    const companyName = formValues.companyName || '';
+    const taxNumber = formValues.taxNumber || '';
+    
+    if (saveInvoiceInfo && typeof saveInvoiceInfo === 'function') {
+      // 直接传递表单值给保存函数
+      await saveInvoiceInfo(companyName, taxNumber);
+    } else {
+      Toast.error(t('保存函数未正确初始化'));
+    }
+  };
+
   return (
     <Card
       className='!rounded-2xl shadow-sm border-0'
@@ -344,6 +365,11 @@ const NotificationSettings = ({
                 {t('保存设置')}
               </Button>
             </>
+          ) : activeTabKey === 'invoice' ? (
+            // 发票信息标签页的按钮
+            <Button type='primary' onClick={handleInvoiceSubmit}>
+              {t('保存设置')}
+            </Button>
           ) : (
             // 其他标签页的通用保存按钮
             <Button type='primary' onClick={handleSubmit}>
@@ -376,9 +402,37 @@ const NotificationSettings = ({
         {() => (
           <Tabs
             type='card'
-            defaultActiveKey='notification'
+            defaultActiveKey='invoice'
             onChange={(key) => setActiveTabKey(key)}
           >
+            {/* 发票信息设置 Tab - 移到第一个位置 */}
+            <TabPane
+              tab={
+                <div className='flex items-center'>
+                  <FileText size={16} className='mr-2' />
+                  {t('发票信息')}
+                </div>
+              }
+              itemKey='invoice'
+            >
+              <div className='py-4'>
+                <Form.Input
+                  field='companyName'
+                  label={t('公司抬头')}
+                  placeholder={t('请输入公司抬头（用于发票）')}
+                  showClear
+                  extraText={t('用于开具发票时显示的公司名称')}
+                />
+                <Form.Input
+                  field='taxNumber'
+                  label={t('税号')}
+                  placeholder={t('请输入税号（用于发票）')}
+                  showClear
+                  extraText={t('用于开具发票时显示的统一社会信用代码或税号')}
+                />
+              </div>
+            </TabPane>
+
             {/* 通知配置 Tab */}
             <TabPane
               tab={

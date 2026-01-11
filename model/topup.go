@@ -309,10 +309,10 @@ func ManualCompleteTopUp(tradeNo string) error {
 			if multiplier <= 0 {
 				multiplier = 1.0
 			}
-			if topUp.PaymentMethod == "stripe" {
+		if topUp.PaymentMethod == "stripe" {
 				actualAmount = topUp.Money * multiplier
 				bonusAmount = actualAmount - topUp.Money
-			} else {
+		} else {
 				// Amount 是美元数量
 				baseMoney := float64(topUp.Amount)
 				actualAmount = baseMoney * multiplier
@@ -322,7 +322,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 
 		// 计算应充值额度：使用实际到账金额（美元）转换为额度
 		dActualAmount := decimal.NewFromFloat(actualAmount)
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		quotaToAdd = int(dActualAmount.Mul(dQuotaPerUnit).IntPart())
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")

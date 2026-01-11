@@ -163,6 +163,10 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/tag/models", controller.GetTagModels)
 			channelRoute.POST("/copy/:id", controller.CopyChannel)
 			channelRoute.POST("/multi_key/manage", controller.ManageMultiKeys)
+			// 兜底渠道管理接口
+			channelRoute.GET("/:id/fallback", controller.GetFallbackChannel)
+			channelRoute.PUT("/:id/fallback", controller.SetFallbackChannel)
+			channelRoute.DELETE("/:id/fallback", controller.ClearFallbackChannel)
 		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
@@ -174,6 +178,15 @@ func SetApiRouter(router *gin.Engine) {
 			tokenRoute.PUT("/", controller.UpdateToken)
 			tokenRoute.DELETE("/:id", controller.DeleteToken)
 			tokenRoute.POST("/batch", controller.DeleteTokenBatch)
+		}
+		
+		// 支持 token 鉴权的令牌管理接口
+		tokenApiRoute := apiRouter.Group("/api/token")
+		tokenApiRoute.Use(middleware.TokenAuthForAPI())
+		{
+			// 统一的添加/编辑令牌接口，通过是否有 id 判断是添加还是编辑
+			tokenApiRoute.POST("/", controller.UpsertToken)
+			tokenApiRoute.PUT("/", controller.UpsertToken)
 		}
 
 		usageRoute := apiRouter.Group("/usage")

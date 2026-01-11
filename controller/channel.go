@@ -1165,6 +1165,108 @@ func CopyChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"id": clone.Id}})
 }
 
+// GetFallbackChannel 获取渠道的兜底渠道ID
+func GetFallbackChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"fallback_channel_id": channel.FallbackChannelId,
+		},
+	})
+}
+
+// SetFallbackChannel 设置渠道的兜底渠道ID
+func SetFallbackChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+
+	var req struct {
+		FallbackChannelId *int `json:"fallback_channel_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	// 验证兜底渠道是否存在（如果设置了）
+	if req.FallbackChannelId != nil && *req.FallbackChannelId > 0 {
+		fallbackChannel, err := model.GetChannelById(*req.FallbackChannelId, false)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "兜底渠道不存在"})
+			return
+		}
+		// 不能将自己设置为兜底渠道
+		if fallbackChannel.Id == id {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "不能将自己设置为兜底渠道"})
+			return
+		}
+	}
+
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	channel.FallbackChannelId = req.FallbackChannelId
+	if err := channel.Update(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	model.InitChannelCache()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "设置成功",
+		"data": gin.H{
+			"fallback_channel_id": channel.FallbackChannelId,
+		},
+	})
+}
+
+// ClearFallbackChannel 清除渠道的兜底渠道ID
+func ClearFallbackChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	channel.FallbackChannelId = nil
+	if err := channel.Update(); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	model.InitChannelCache()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "清除成功",
+	})
+}
+
 // MultiKeyManageRequest represents the request for multi-key management operations
 type MultiKeyManageRequest struct {
 	ChannelId int    `json:"channel_id"`

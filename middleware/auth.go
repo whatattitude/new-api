@@ -37,9 +37,9 @@ func authHelper(c *gin.Context, minRole int) {
 	status := session.Get("status")
 	useAccessToken := false
 	if username == nil {
-		// Check access token
-		accessToken := c.Request.Header.Get("Authorization")
-		if accessToken == "" {
+		// Check access token or sk-xxx token
+		authHeader := c.Request.Header.Get("Authorization")
+		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": "无权进行此操作，未登录且未提供 access token",
@@ -47,8 +47,45 @@ func authHelper(c *gin.Context, minRole int) {
 			c.Abort()
 			return
 		}
-		user := model.ValidateAccessToken(accessToken)
-		if user != nil && user.Username != "" {
+		
+		// 检查是否是 sk-xxx 格式的 token
+		authHeader = strings.TrimPrefix(authHeader, "Bearer ")
+		if strings.HasPrefix(authHeader, "sk-") {
+			// 这是 sk-xxx 格式的 token，应该查询 tokens 表
+			key := strings.TrimPrefix(authHeader, "sk-")
+			parts := strings.Split(key, "-")
+			key = parts[0]
+			
+			token, err := model.ValidateUserToken(key)
+			if err != nil || token == nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "无权进行此操作，token 无效: " + err.Error(),
+				})
+				c.Abort()
+				return
+			}
+			
+			// 获取完整的用户信息（包含 Role）
+			user, err := model.GetUserById(token.UserId, false)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "无权进行此操作，获取用户信息失败: " + err.Error(),
+				})
+				c.Abort()
+				return
+			}
+			
+			if user.Status != common.UserStatusEnabled {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "用户已被封禁",
+				})
+				c.Abort()
+				return
+			}
+			
 			if !validUserInfo(user.Username, user.Role) {
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
@@ -57,6 +94,26 @@ func authHelper(c *gin.Context, minRole int) {
 				c.Abort()
 				return
 			}
+			
+			// Token is valid, set user info
+			username = user.Username
+			role = user.Role
+			id = user.Id
+			status = user.Status
+			useAccessToken = true
+			// 使用 token 鉴权时，不需要 New-Api-User header，直接跳过检查
+		} else {
+			// 这是 access token 格式，查询 users 表
+			user := model.ValidateAccessToken(authHeader)
+			if user != nil && user.Username != "" {
+				if !validUserInfo(user.Username, user.Role) {
+					c.JSON(http.StatusOK, gin.H{
+						"success": false,
+						"message": "无权进行此操作，用户信息无效",
+					})
+					c.Abort()
+					return
+				}
 			// Token is valid
 			username = user.Username
 			role = user.Role
@@ -72,6 +129,11 @@ func authHelper(c *gin.Context, minRole int) {
 			return
 		}
 	}
+	}
+	
+	// 只有在使用 session 鉴权时，才需要检查 New-Api-User header
+	// 使用 token 鉴权（sk-xxx 或 access token）时，已经通过 token 获取了用户ID，不需要 New-Api-User
+	if !useAccessToken {
 	// get header New-Api-User
 	apiUserIdStr := c.Request.Header.Get("New-Api-User")
 	if apiUserIdStr == "" {
@@ -99,6 +161,7 @@ func authHelper(c *gin.Context, minRole int) {
 		})
 		c.Abort()
 		return
+		}
 	}
 	if status.(int) == common.UserStatusDisabled {
 		c.JSON(http.StatusOK, gin.H{
@@ -327,4 +390,140 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 		}
 	}
 	return nil
+}
+
+// TokenAuthForAPI 支持 token 鉴权的中间件，用于 API 接口（返回标准 JSON 响应）
+// 复用 TokenAuth 的逻辑，但返回标准 JSON 响应而不是 OpenAI 格式
+func TokenAuthForAPI() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		// 复用 TokenAuth 的 token 解析逻辑
+		key := c.Request.Header.Get("Authorization")
+		parts := make([]string, 0)
+		key = strings.TrimPrefix(key, "Bearer ")
+		if key == "" || key == "midjourney-proxy" {
+			key = c.Request.Header.Get("mj-api-secret")
+			key = strings.TrimPrefix(key, "Bearer ")
+			key = strings.TrimPrefix(key, "sk-")
+			parts = strings.Split(key, "-")
+			key = parts[0]
+		} else {
+			key = strings.TrimPrefix(key, "sk-")
+			parts = strings.Split(key, "-")
+			key = parts[0]
+		}
+
+		// 使用 ValidateUserToken 查询 token 表（不是 users 表）
+		token, err := model.ValidateUserToken(key)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "token 无效: " + err.Error(),
+			})
+			c.Abort()
+			return
+		}
+
+		if token == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "token 无效",
+			})
+			c.Abort()
+			return
+		}
+
+		// 检查 IP 限制
+		allowIps := token.GetIpLimits()
+		if len(allowIps) > 0 {
+			clientIp := c.ClientIP()
+			logger.LogDebug(c, "Token has IP restrictions, checking client IP %s", clientIp)
+			ip := net.ParseIP(clientIp)
+			if ip == nil {
+				c.JSON(http.StatusForbidden, gin.H{
+					"success": false,
+					"message": "无法解析客户端 IP 地址",
+				})
+				c.Abort()
+				return
+			}
+			if common.IsIpInCIDRList(ip, allowIps) == false {
+				c.JSON(http.StatusForbidden, gin.H{
+					"success": false,
+					"message": "您的 IP 不在令牌允许访问的列表中",
+				})
+				c.Abort()
+				return
+			}
+			logger.LogDebug(c, "Client IP %s passed the token IP restrictions check", clientIp)
+		}
+
+		// 检查用户状态
+		userCache, err := model.GetUserCache(token.UserId)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "获取用户信息失败: " + err.Error(),
+			})
+			c.Abort()
+			return
+		}
+
+		userEnabled := userCache.Status == common.UserStatusEnabled
+		if !userEnabled {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "用户已被封禁",
+			})
+			c.Abort()
+			return
+		}
+
+		userCache.WriteContext(c)
+
+		// 设置 token 相关信息到 context（复用 TokenAuth 的逻辑）
+		c.Set("id", token.UserId)
+		c.Set("token_id", token.Id)
+		c.Set("token_key", token.Key)
+		c.Set("token_name", token.Name)
+		c.Set("token_unlimited_quota", token.UnlimitedQuota)
+		if !token.UnlimitedQuota {
+			c.Set("token_quota", token.RemainQuota)
+		}
+		if token.ModelLimitsEnabled {
+			c.Set("token_model_limit_enabled", true)
+			c.Set("token_model_limit", token.GetModelLimitsMap())
+		} else {
+			c.Set("token_model_limit_enabled", false)
+		}
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
+		common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+
+		// 处理分组逻辑（复用 TokenAuth 的逻辑）
+		userGroup := userCache.Group
+		tokenGroup := token.Group
+		if tokenGroup != "" {
+			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
+				c.JSON(http.StatusForbidden, gin.H{
+					"success": false,
+					"message": fmt.Sprintf("无权访问 %s 分组", tokenGroup),
+				})
+				c.Abort()
+				return
+			}
+			if !ratio_setting.ContainsGroupRatio(tokenGroup) {
+				if tokenGroup != "auto" {
+					c.JSON(http.StatusForbidden, gin.H{
+						"success": false,
+						"message": fmt.Sprintf("分组 %s 已被弃用", tokenGroup),
+					})
+					c.Abort()
+					return
+				}
+			}
+			userGroup = tokenGroup
+		}
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+
+		c.Next()
+	}
 }

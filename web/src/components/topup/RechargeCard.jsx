@@ -193,7 +193,7 @@ const RechargeCard = ({
                       className='text-base sm:text-2xl font-bold mb-2'
                       style={{ color: 'white' }}
                     >
-                      ¥{(userState?.user?.total_topup_amount || 0).toFixed(2)}
+                      ${(userState?.user?.total_topup_amount || 0).toFixed(2)}
                     </div>
                     <div className='flex items-center justify-center text-sm'>
                       <Coins
@@ -218,7 +218,7 @@ const RechargeCard = ({
                       className='text-base sm:text-2xl font-bold mb-2'
                       style={{ color: 'white' }}
                     >
-                      ¥{(userState?.user?.total_bonus_amount || 0).toFixed(2)}
+                      ${(userState?.user?.total_bonus_amount || 0).toFixed(2)}
                     </div>
                     <div className='flex items-center justify-center text-sm'>
                       <IconGift
@@ -350,12 +350,12 @@ const RechargeCard = ({
                             }
                           >
                             <div className='space-y-1'>
-                              <Text type='secondary' className='text-red-600'>
-                                {t('实付金额：')}
-                                <span style={{ color: 'red' }}>
-                                  {renderAmount()}
-                                </span>
-                              </Text>
+                            <Text type='secondary' className='text-red-600'>
+                              {t('实付金额：')}
+                              <span style={{ color: 'red' }}>
+                                {renderAmount()}
+                              </span>
+                            </Text>
                               {(() => {
                                 const multiplier = userState?.user?.topup_multiplier || 1.0;
                                 // amount 是实付金额（人民币），topUpCount 是充值数量（美元）

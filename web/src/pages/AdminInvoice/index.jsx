@@ -317,17 +317,33 @@ const AdminInvoice = () => {
       let fileName = `invoice_${invoiceId}.pdf`;
       
       if (contentDisposition) {
-        // 匹配 filename="文件名" 或 filename=文件名
-        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
-        if (fileNameMatch && fileNameMatch[1]) {
-          // 移除引号
-          fileName = fileNameMatch[1].replace(/['"]/g, '');
-          // 尝试解码 URI
+        // 优先匹配 RFC 5987 格式的 filename* (UTF-8 编码)
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (filenameStarMatch && filenameStarMatch[1]) {
           try {
-            fileName = decodeURIComponent(fileName);
+            // 解码 URL 编码的文件名
+            fileName = decodeURIComponent(filenameStarMatch[1]);
           } catch (e) {
-            // 如果解码失败，使用原始值
             console.warn('文件名解码失败:', e);
+            // 如果解码失败，尝试匹配普通的 filename
+            const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+            if (fileNameMatch && fileNameMatch[1]) {
+              fileName = fileNameMatch[1].replace(/['"]/g, '');
+            }
+          }
+        } else {
+          // 如果没有 filename*，尝试匹配普通的 filename
+          const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+          if (fileNameMatch && fileNameMatch[1]) {
+            // 移除引号
+            fileName = fileNameMatch[1].replace(/['"]/g, '');
+            // 尝试解码 URI（兼容旧格式）
+            try {
+              fileName = decodeURIComponent(fileName);
+            } catch (e) {
+              // 如果解码失败，使用原始值
+              console.warn('文件名解码失败:', e);
+            }
           }
         }
       }
@@ -400,6 +416,24 @@ const AdminInvoice = () => {
         title: t('用户ID'),
         dataIndex: 'user_id',
         key: 'user_id',
+      },
+      {
+        title: t('用户名'),
+        dataIndex: 'username',
+        key: 'username',
+        render: (text) => <Text>{text || '-'}</Text>,
+      },
+      {
+        title: t('公司抬头'),
+        dataIndex: 'company_name',
+        key: 'company_name',
+        render: (text) => <Text>{text || '-'}</Text>,
+      },
+      {
+        title: t('税号'),
+        dataIndex: 'tax_number',
+        key: 'tax_number',
+        render: (text) => <Text>{text || '-'}</Text>,
       },
       {
         title: t('支付方式'),

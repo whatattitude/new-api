@@ -86,6 +86,8 @@ const PersonalSetting = () => {
     gotifyPriority: 5,
     acceptUnsetModelRatioModel: false,
     recordIpLog: false,
+    companyName: '',
+    taxNumber: '',
   });
 
   useEffect(() => {
@@ -159,9 +161,18 @@ const PersonalSetting = () => {
         acceptUnsetModelRatioModel:
           settings.accept_unset_model_ratio_model || false,
         recordIpLog: settings.record_ip_log || false,
+        companyName: userState?.user?.company_name || '',
+        taxNumber: userState?.user?.tax_number || '',
       });
+    } else if (userState?.user) {
+      // 即使没有setting，也要加载发票信息
+      setNotificationSettings((prev) => ({
+        ...prev,
+        companyName: userState.user.company_name || '',
+        taxNumber: userState.user.tax_number || '',
+      }));
     }
-  }, [userState?.user?.setting]);
+  }, [userState?.user?.setting, userState?.user?.company_name, userState?.user?.tax_number]);
 
   const handleInputChange = (name, value) => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
@@ -440,6 +451,28 @@ const PersonalSetting = () => {
     }
   };
 
+  const saveInvoiceInfo = async (companyName, taxNumber) => {
+    try {
+      // 如果传入了参数，使用参数；否则使用 notificationSettings 中的值
+      const finalCompanyName = companyName !== undefined ? companyName : notificationSettings.companyName;
+      const finalTaxNumber = taxNumber !== undefined ? taxNumber : notificationSettings.taxNumber;
+      
+      const res = await API.put('/api/user/self', {
+        company_name: finalCompanyName || '',
+        tax_number: finalTaxNumber || '',
+      });
+
+      if (res.data.success) {
+        showSuccess(t('发票信息保存成功'));
+        await getUserData();
+      } else {
+        showError(res.data.message);
+      }
+    } catch (error) {
+      showError(t('发票信息保存失败'));
+    }
+  };
+
   return (
     <div className='mt-[60px]'>
       <div className='flex justify-center'>
@@ -475,6 +508,7 @@ const PersonalSetting = () => {
               notificationSettings={notificationSettings}
               handleNotificationSettingChange={handleNotificationSettingChange}
               saveNotificationSettings={saveNotificationSettings}
+              saveInvoiceInfo={saveInvoiceInfo}
             />
           </div>
         </div>

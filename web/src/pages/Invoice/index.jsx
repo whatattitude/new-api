@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Table,
   Badge,
@@ -64,6 +65,7 @@ const PAYMENT_METHOD_MAP = {
 
 const Invoice = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [topups, setTopups] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -178,21 +180,124 @@ const Invoice = () => {
         showSuccess(t('发票申请成功'));
         await loadInvoices(page, pageSize);
       } else {
-        showError(res.data.message || t('申请失败'));
+        const errorMessage = res.data.message || t('申请失败');
+        // 检查是否是发票信息未填写的错误
+        if (errorMessage.includes('发票信息未填写')) {
+          Modal.error({
+            title: t('发票信息未填写'),
+            content: (
+              <div>
+                <p>{t('请先完善发票信息（公司抬头和税号）后再申请发票')}</p>
+                <Button
+                  type='primary'
+                  theme='solid'
+                  onClick={() => {
+                    navigate('/console/personal');
+                  }}
+                  style={{ marginTop: '12px' }}
+                >
+                  {t('前往个人设置')}
+                </Button>
+              </div>
+            ),
+          });
+        } else {
+          showError(errorMessage);
+        }
       }
     } catch (error) {
-      showError(error.message || t('申请失败'));
+      const errorMessage = error.response?.data?.message || error.message || t('申请失败');
+      // 检查是否是发票信息未填写的错误
+      if (errorMessage.includes('发票信息未填写')) {
+        Modal.error({
+          title: t('发票信息未填写'),
+          content: (
+            <div>
+              <p>{t('请先完善发票信息（公司抬头和税号）后再申请发票')}</p>
+              <Button
+                type='primary'
+                theme='solid'
+                onClick={() => {
+                  navigate('/console/personal');
+                }}
+                style={{ marginTop: '12px' }}
+              >
+                {t('前往个人设置')}
+              </Button>
+            </div>
+          ),
+        });
+      } else {
+        showError(errorMessage);
+      }
     }
   };
 
   // 确认申请发票
   const confirmApplyInvoice = (topup) => {
+    const companyName = userInfo?.company_name || '';
+    const taxNumber = userInfo?.tax_number || '';
+    const hasInvoiceInfo = companyName && taxNumber;
+    
     Modal.confirm({
       title: t('确认申请发票'),
-      content: t('确定要为订单 {{tradeNo}} 申请发票吗？', {
-        tradeNo: topup.trade_no,
-      }),
+      content: (
+        <div>
+          <p style={{ marginBottom: '12px' }}>
+            {t('确定要为订单 {{tradeNo}} 申请发票吗？', {
+              tradeNo: topup.trade_no,
+            })}
+          </p>
+          {hasInvoiceInfo ? (
+            <div style={{ 
+              marginTop: '16px', 
+              padding: '12px', 
+              backgroundColor: 'var(--semi-color-fill-0)', 
+              borderRadius: '4px' 
+            }}>
+              <p style={{ marginBottom: '8px', fontWeight: '500' }}>
+                {t('发票信息')}:
+              </p>
+              <p style={{ marginBottom: '4px' }}>
+                <span style={{ color: 'var(--semi-color-text-2)' }}>
+                  {t('公司抬头')}:
+                </span>{' '}
+                <span>{companyName}</span>
+              </p>
+              <p>
+                <span style={{ color: 'var(--semi-color-text-2)' }}>
+                  {t('税号')}:
+                </span>{' '}
+                <span>{taxNumber}</span>
+              </p>
+            </div>
+          ) : (
+            <div style={{ 
+              marginTop: '16px', 
+              padding: '12px', 
+              backgroundColor: 'var(--semi-color-warning-light-active)', 
+              borderRadius: '4px' 
+            }}>
+              <p style={{ marginBottom: '8px', color: 'var(--semi-color-warning)' }}>
+                {t('提示：发票信息未填写')}
+              </p>
+              <Button
+                type='primary'
+                theme='solid'
+                size='small'
+                onClick={() => {
+                  Modal.destroyAll();
+                  navigate('/console/personal');
+                }}
+              >
+                {t('前往个人设置')}
+              </Button>
+            </div>
+          )}
+        </div>
+      ),
       onOk: () => handleApplyInvoice(topup),
+      width: 480,
     });
   };
 
@@ -246,10 +351,56 @@ const Invoice = () => {
             setSelectedRowKeys([]);
             await loadInvoices(page, pageSize);
           } else {
-            showError(res.data.message || t('批量申请失败'));
+            const errorMessage = res.data.message || t('批量申请失败');
+            // 检查是否是发票信息未填写的错误
+            if (errorMessage.includes('发票信息未填写')) {
+              Modal.error({
+                title: t('发票信息未填写'),
+                content: (
+                  <div>
+                    <p>{t('请先完善发票信息（公司抬头和税号）后再申请发票')}</p>
+                    <Button
+                      type='primary'
+                      theme='solid'
+                      onClick={() => {
+                        navigate('/console/personal');
+                      }}
+                      style={{ marginTop: '12px' }}
+                    >
+                      {t('前往个人设置')}
+                    </Button>
+                  </div>
+                ),
+              });
+            } else {
+              showError(errorMessage);
+            }
           }
         } catch (error) {
-          showError(error.message || t('批量申请失败'));
+          const errorMessage = error.response?.data?.message || error.message || t('批量申请失败');
+          // 检查是否是发票信息未填写的错误
+          if (errorMessage.includes('发票信息未填写')) {
+            Modal.error({
+              title: t('发票信息未填写'),
+              content: (
+                <div>
+                  <p>{t('请先完善发票信息（公司抬头和税号）后再申请发票')}</p>
+                  <Button
+                    type='primary'
+                    theme='solid'
+                    onClick={() => {
+                      navigate('/console/personal');
+                    }}
+                    style={{ marginTop: '12px' }}
+                  >
+                    {t('前往个人设置')}
+                  </Button>
+                </div>
+              ),
+            });
+          } else {
+            showError(errorMessage);
+          }
         } finally {
           setBatchLoading(false);
         }
@@ -319,19 +470,40 @@ const Invoice = () => {
       link.href = url;
       
       // 从响应头获取文件名，如果没有则使用默认名称
+      // axios 可能将响应头转换为小写，所以需要检查两种格式
       const contentDisposition = 
         res.headers['content-disposition'] || 
         res.headers['Content-Disposition'];
       let fileName = `invoice_${invoiceId}.pdf`;
       
       if (contentDisposition) {
-        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
-        if (fileNameMatch && fileNameMatch[1]) {
-          fileName = fileNameMatch[1].replace(/['"]/g, '');
+        // 优先匹配 RFC 5987 格式的 filename* (UTF-8 编码)
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (filenameStarMatch && filenameStarMatch[1]) {
           try {
-            fileName = decodeURIComponent(fileName);
+            // 解码 URL 编码的文件名
+            fileName = decodeURIComponent(filenameStarMatch[1]);
           } catch (e) {
             console.warn('文件名解码失败:', e);
+            // 如果解码失败，尝试匹配普通的 filename
+            const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+            if (fileNameMatch && fileNameMatch[1]) {
+              fileName = fileNameMatch[1].replace(/['"]/g, '');
+            }
+          }
+        } else {
+          // 如果没有 filename*，尝试匹配普通的 filename
+          const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+          if (fileNameMatch && fileNameMatch[1]) {
+            // 移除引号
+            fileName = fileNameMatch[1].replace(/['"]/g, '');
+            // 尝试解码 URI（兼容旧格式）
+            try {
+              fileName = decodeURIComponent(fileName);
+            } catch (e) {
+              // 如果解码失败，使用原始值
+              console.warn('文件名解码失败:', e);
+            }
           }
         }
       }
@@ -478,17 +650,27 @@ const Invoice = () => {
         <div className='flex flex-col gap-4'>
           <div className='flex items-center justify-between'>
             <Title heading={4}>{t('发票管理')}</Title>
-            {selectedRowKeys.length > 0 && (
+            <div className='flex items-center gap-2'>
               <Button
-                type='primary'
-                theme='solid'
+                type='tertiary'
+                theme='borderless'
                 icon={<FileText size={16} />}
-                loading={batchLoading}
-                onClick={handleBatchApplyInvoice}
+                onClick={() => navigate('/console/personal')}
               >
-                {t('批量申请发票 ({{count}})', { count: selectedRowKeys.length })}
+                {t('前往个人设置')}
               </Button>
-            )}
+              {selectedRowKeys.length > 0 && (
+                <Button
+                  type='primary'
+                  theme='solid'
+                  icon={<FileText size={16} />}
+                  loading={batchLoading}
+                  onClick={handleBatchApplyInvoice}
+                >
+                  {t('批量申请发票 ({{count}})', { count: selectedRowKeys.length })}
+                </Button>
+              )}
+            </div>
           </div>
           <div className='flex gap-2'>
             <Input

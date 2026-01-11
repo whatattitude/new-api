@@ -152,6 +152,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    allow_all_retry: false,
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -163,6 +164,8 @@ const EditChannelModal = (props) => {
     allow_service_tier: false,
     disable_store: false, // false = 允许透传（默认开启）
     allow_safety_identifier: false,
+    // 兜底渠道ID
+    fallback_channel_id: null,
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -176,6 +179,7 @@ const EditChannelModal = (props) => {
   const [fullModels, setFullModels] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
   const [customModel, setCustomModel] = useState('');
+  const [channelOptions, setChannelOptions] = useState([]); // 用于兜底渠道选择
   const [modalImageUrl, setModalImageUrl] = useState('');
   const [isModalOpenurl, setIsModalOpenurl] = useState(false);
   const [modelModalVisible, setModelModalVisible] = useState(false);
@@ -355,6 +359,8 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    system_prompt_override: false,
+    allow_all_retry: false,
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -536,6 +542,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.allow_all_retry = parsedSettings.allow_all_retry || false;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -544,6 +551,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.allow_all_retry = false;
         }
       } else {
         data.force_format = false;
@@ -552,6 +560,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.allow_all_retry = false;
       }
 
       if (data.settings) {
@@ -620,6 +629,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        allow_all_retry: data.allow_all_retry || false,
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -743,6 +753,24 @@ const EditChannelModal = (props) => {
     }
   };
 
+  // 获取渠道列表用于兜底渠道选择
+  const fetchChannels = async () => {
+    try {
+      const res = await API.get('/api/channel/');
+      if (res?.data?.success && res.data.data?.items) {
+        const channels = res.data.data.items
+          .filter((ch) => ch.id !== channelId) // 排除当前渠道
+          .map((ch) => ({
+            label: `${ch.name} (ID: ${ch.id})`,
+            value: ch.id,
+          }));
+        setChannelOptions(channels);
+      }
+    } catch (error) {
+      // ignore
+    }
+  };
+
   // 查看渠道密钥（透明验证）
   const handleShow2FAModal = async () => {
     try {
@@ -846,6 +874,7 @@ const EditChannelModal = (props) => {
     if (props.visible) {
       if (isEdit) {
         loadChannel();
+        fetchChannels(); // 加载渠道列表用于兜底渠道选择
       } else {
         formApiRef.current?.setValues(getInitValues());
       }
@@ -878,6 +907,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
+      allow_all_retry: false,
     });
     // 重置密钥模式状态
     setKeyMode('append');
@@ -1164,6 +1194,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      allow_all_retry: localInputs.allow_all_retry || false,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
@@ -1215,6 +1246,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.allow_all_retry;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -2670,6 +2702,22 @@ const EditChannelModal = (props) => {
                       initValue={autoBan}
                     />
 
+                    <Form.Select
+                      field='fallback_channel_id'
+                      label={t('兜底渠道')}
+                      placeholder={t('请选择兜底渠道（可选）')}
+                      optionList={channelOptions}
+                      style={{ width: '100%' }}
+                      allowClear
+                      showClear
+                      onChange={(value) =>
+                        handleInputChange('fallback_channel_id', value)
+                      }
+                      extraText={t(
+                        '当当前渠道不可用时，将使用兜底渠道进行请求',
+                      )}
+                    />
+
                     <Form.TextArea
                       field='param_override'
                       label={t('参数覆盖')}
@@ -3003,6 +3051,19 @@ const EditChannelModal = (props) => {
                       }
                       extraText={t(
                         '如果用户请求中包含系统提示词，则使用此设置拼接到用户的系统提示词前面',
+                      )}
+                    />
+
+                    <Form.Switch
+                      field='allow_all_retry'
+                      label={t('全重试')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange('allow_all_retry', value)
+                      }
+                      extraText={t(
+                        '开启后，调度到此渠道的流量都会跳过重试判断，直接允许重试',
                       )}
                     />
                   </Card>

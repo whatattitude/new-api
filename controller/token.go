@@ -289,3 +289,112 @@ func DeleteTokenBatch(c *gin.Context) {
 		"data":    count,
 	})
 }
+
+// UpsertToken 统一的添加/编辑令牌接口，支持 token 鉴权
+// 如果请求中包含 id，则为编辑；否则为添加
+func UpsertToken(c *gin.Context) {
+	token := model.Token{}
+	err := c.ShouldBindJSON(&token)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(token.Name) > 50 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "令牌名称过长",
+		})
+		return
+	}
+	
+	userId := c.GetInt("id")
+	isEdit := token.Id > 0
+	
+	if isEdit {
+		// 编辑模式
+		statusOnly := c.Query("status_only")
+		cleanToken, err := model.GetTokenByIds(token.Id, userId)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if token.Status == common.TokenStatusEnabled {
+			if cleanToken.Status == common.TokenStatusExpired && cleanToken.ExpiredTime <= common.GetTimestamp() && cleanToken.ExpiredTime != -1 {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "令牌已过期，无法启用，请先修改令牌过期时间，或者设置为永不过期",
+				})
+				return
+			}
+			if cleanToken.Status == common.TokenStatusExhausted && cleanToken.RemainQuota <= 0 && !cleanToken.UnlimitedQuota {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "令牌可用额度已用尽，无法启用，请先修改令牌剩余额度，或者设置为无限额度",
+				})
+				return
+			}
+		}
+		if statusOnly != "" {
+			cleanToken.Status = token.Status
+		} else {
+			// If you add more fields, please also update token.Update()
+			cleanToken.Name = token.Name
+			cleanToken.ExpiredTime = token.ExpiredTime
+			cleanToken.RemainQuota = token.RemainQuota
+			cleanToken.UnlimitedQuota = token.UnlimitedQuota
+			cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
+			cleanToken.ModelLimits = token.ModelLimits
+			cleanToken.AllowIps = token.AllowIps
+			cleanToken.Group = token.Group
+			cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		}
+		err = cleanToken.Update()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    cleanToken,
+		})
+		return
+	} else {
+		// 添加模式
+		key, err := common.GenerateKey()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "生成令牌失败",
+			})
+			common.SysLog("failed to generate token key: " + err.Error())
+			return
+		}
+		cleanToken := model.Token{
+			UserId:             userId,
+			Name:               token.Name,
+			Key:                key,
+			CreatedTime:        common.GetTimestamp(),
+			AccessedTime:       common.GetTimestamp(),
+			ExpiredTime:        token.ExpiredTime,
+			RemainQuota:        token.RemainQuota,
+			UnlimitedQuota:     token.UnlimitedQuota,
+			ModelLimitsEnabled: token.ModelLimitsEnabled,
+			ModelLimits:        token.ModelLimits,
+			AllowIps:           token.AllowIps,
+			Group:              token.Group,
+			CrossGroupRetry:    token.CrossGroupRetry,
+		}
+		err = cleanToken.Insert()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    cleanToken,
+		})
+		return
+	}
+}

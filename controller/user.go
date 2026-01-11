@@ -481,8 +481,10 @@ func GetSelf(c *gin.Context) {
 		"aff_history_quota":  user.AffHistoryQuota,
 		"inviter_id":         user.InviterId,
 		"linux_do_id":        user.LinuxDOId,
-		"setting":             user.Setting,
+		"setting":            user.Setting,
 		"stripe_customer":    user.StripeCustomer,
+		"company_name":       user.CompanyName,
+		"tax_number":         user.TaxNumber,
 		"sidebar_modules":    userSetting.SidebarModules, // 正确提取sidebar_modules字段
 		"permissions":        permissions,                // 新增权限字段
 	}
@@ -715,6 +717,61 @@ func UpdateSelf(c *gin.Context) {
 		return
 	}
 
+	// 检查是否只是更新发票信息（company_name 和 tax_number）
+	// 如果只包含这两个字段，则单独处理，避免验证整个User结构体
+	_, hasCompanyName := requestData["company_name"]
+	_, hasTaxNumber := requestData["tax_number"]
+
+	// 检查是否只包含发票相关字段（不包含其他用户信息字段）
+	hasOnlyInvoiceFields := (hasCompanyName || hasTaxNumber) &&
+		requestData["username"] == nil &&
+		requestData["display_name"] == nil &&
+		requestData["password"] == nil &&
+		requestData["original_password"] == nil &&
+		requestData["sidebar_modules"] == nil
+
+	if hasOnlyInvoiceFields {
+		userId := c.GetInt("id")
+
+		// 更新发票信息（允许空字符串）
+		updates := map[string]interface{}{}
+		if companyName, ok := requestData["company_name"]; ok {
+			// 允许空字符串，所以直接转换
+			if companyNameStr, ok := companyName.(string); ok {
+				updates["company_name"] = companyNameStr
+			} else if companyName == nil {
+				// 如果为nil，设置为空字符串
+				updates["company_name"] = ""
+			}
+		}
+		if taxNumber, ok := requestData["tax_number"]; ok {
+			if taxNumberStr, ok := taxNumber.(string); ok {
+				updates["tax_number"] = taxNumberStr
+			} else if taxNumber == nil {
+				// 如果为nil，设置为空字符串
+				updates["tax_number"] = ""
+			}
+		}
+
+		// 只要有company_name或tax_number字段，就执行更新（即使值为空）
+		if hasCompanyName || hasTaxNumber {
+			// 直接更新数据库
+			if err := model.DB.Model(&model.User{}).Where("id = ?", userId).Updates(updates).Error; err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "更新发票信息失败: " + err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "发票信息更新成功",
+			})
+			return
+		}
+	}
+
 	// 原有的用户信息更新逻辑
 	var user model.User
 	requestDataBytes, err := json.Marshal(requestData)
@@ -750,6 +807,8 @@ func UpdateSelf(c *gin.Context) {
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
+		CompanyName: user.CompanyName,
+		TaxNumber:   user.TaxNumber,
 	}
 	if user.Password == "$I_LOVE_U" {
 		user.Password = "" // rollback to what it should be

@@ -410,8 +410,44 @@ func GetAllTopUps(c *gin.Context) {
 		return
 	}
 
+	// 关联查询用户信息（公司抬头和税号）
+	items := make([]map[string]interface{}, len(topups))
+	for i, topup := range topups {
+		item := map[string]interface{}{
+			"id":             topup.Id,
+			"user_id":        topup.UserId,
+			"amount":         topup.Amount,
+			"money":          topup.Money,
+			"actual_amount":  topup.ActualAmount,
+			"bonus_amount":   topup.BonusAmount,
+			"trade_no":       topup.TradeNo,
+			"payment_method": topup.PaymentMethod,
+			"create_time":    topup.CreateTime,
+			"complete_time":  topup.CompleteTime,
+			"status":         topup.Status,
+			"invoice_status": topup.InvoiceStatus,
+			"invoice_id":     topup.InvoiceId,
+		}
+
+		// 查询用户信息
+		user, err := model.GetUserById(topup.UserId, false)
+		if err == nil && user != nil {
+			item["company_name"] = user.CompanyName
+			item["tax_number"] = user.TaxNumber
+			item["username"] = user.Username
+			item["display_name"] = user.DisplayName
+		} else {
+			item["company_name"] = ""
+			item["tax_number"] = ""
+			item["username"] = ""
+			item["display_name"] = ""
+		}
+
+		items[i] = item
+	}
+
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(topups)
+	pageInfo.SetItems(items)
 	common.ApiSuccess(c, pageInfo)
 }
 
@@ -484,6 +520,20 @@ func UpdateInvoiceStatus(c *gin.Context) {
 		return
 	}
 
+	// 如果是申请发票（状态变为"待开"），需要检测用户发票信息是否填写完整
+	if req.InvoiceStatus == common.InvoiceStatusPending {
+		user, err := model.GetUserById(userId, false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		// 检查公司抬头和税号是否都已填写
+		if user.CompanyName == "" || user.TaxNumber == "" {
+			common.ApiErrorMsg(c, "发票信息未填写，请先到个人设置页面完善发票信息（公司抬头和税号）")
+			return
+		}
+	}
+
 	// 更新发票状态
 	topUp.InvoiceStatus = req.InvoiceStatus
 	if err := topUp.Update(); err != nil {
@@ -527,6 +577,21 @@ func BatchUpdateInvoiceStatus(c *gin.Context) {
 	}
 
 	userId := c.GetInt("id")
+	
+	// 如果是申请发票（状态变为"待开"），需要先检测用户发票信息是否填写完整
+	if req.InvoiceStatus == common.InvoiceStatusPending {
+		user, err := model.GetUserById(userId, false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		// 检查公司抬头和税号是否都已填写
+		if user.CompanyName == "" || user.TaxNumber == "" {
+			common.ApiErrorMsg(c, "发票信息未填写，请先到个人设置页面完善发票信息（公司抬头和税号）")
+			return
+		}
+	}
+
 	successCount := 0
 	failedCount := 0
 	var failedOrders []string
@@ -792,6 +857,10 @@ func GetInvoiceFile(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", invoice.MimeType)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", invoice.FileName))
+	// 使用 RFC 5987 标准编码中文文件名，避免乱码
+	// 同时提供 filename（ASCII 兼容）和 filename*（UTF-8 编码）
+	fileNameASCII := invoice.FileName
+	fileNameUTF8 := url.QueryEscape(invoice.FileName)
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", fileNameASCII, fileNameUTF8))
 	c.Data(200, invoice.MimeType, invoice.FileData)
 }

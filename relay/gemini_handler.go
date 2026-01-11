@@ -180,9 +180,13 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
+			originalStatusCode := httpResp.StatusCode
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+			if newAPIError.StatusCode != originalStatusCode {
+				logger.LogInfo(c, fmt.Sprintf("[状态码复写] 原始状态码: %d -> 复写后: %d, 映射配置: %s", originalStatusCode, newAPIError.StatusCode, statusCodeMappingStr))
+			}
 			return newAPIError
 		}
 	}

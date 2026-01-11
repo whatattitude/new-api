@@ -49,6 +49,8 @@ type User struct {
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	TopupMultiplier  float64        `json:"topup_multiplier" gorm:"type:decimal(10,2);default:1.0"` // 充值倍率，默认1.0
 	TotalBonusAmount float64        `json:"total_bonus_amount" gorm:"type:decimal(10,2);default:0"` // 累计赠送金额
+	CompanyName      string         `json:"company_name" gorm:"type:varchar(255)"`                  // 公司抬头（用于发票）
+	TaxNumber        string         `json:"tax_number" gorm:"type:varchar(50)"`                     // 税号（用于发票）
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -440,8 +442,17 @@ func (user *User) Update(updatePassword bool) error {
 		}
 	}
 	newUser := *user
+	updates := map[string]interface{}{
+		"username":     newUser.Username,
+		"display_name": newUser.DisplayName,
+		"company_name": newUser.CompanyName,
+		"tax_number":   newUser.TaxNumber,
+	}
+	if updatePassword {
+		updates["password"] = newUser.Password
+	}
 	DB.First(&user, user.Id)
-	if err = DB.Model(user).Updates(newUser).Error; err != nil {
+	if err = DB.Model(user).Updates(updates).Error; err != nil {
 		return err
 	}
 
