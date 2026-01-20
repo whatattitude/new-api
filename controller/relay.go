@@ -408,7 +408,11 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			logger.LogWarn(c, fmt.Sprintf("[Hash调度] hash 调度失败，回退到随机调度: %s", err.Error()))
 			// 如果 hash 调度失败，回退到随机调度
 			channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
-		} else {
+		} else if channel != nil && usedChannelIds[channel.Id] {
+			// 如果 hash 调度选中的渠道已在失败列表中，回退到随机调度
+			logger.LogWarn(c, fmt.Sprintf("[Hash调度] hash 调度选中的渠道 #%d 已在失败列表中，回退到随机调度", channel.Id))
+			channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(retryParam)
+		} else if channel != nil {
 			logger.LogInfo(c, fmt.Sprintf("[Hash调度] 使用 hash 调度选择渠道 #%d (分组: %s)", channel.Id, selectGroup))
 		}
 	} else {
@@ -424,7 +428,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
-	// 检查选中的渠道是否在已使用的渠道列表中
+	// 检查选中的渠道是否在已使用的渠道列表中（随机调度也可能选中已失败的渠道）
 	if usedChannelIds[channel.Id] {
 		// 如果选中的渠道已经在失败列表中，增加 retry 参数，让外层重试逻辑再次调用 getChannel
 		logger.LogWarn(c, fmt.Sprintf("[渠道选择] 渠道 #%d 已在失败列表中，增加 retry 参数，由外层重试逻辑处理", channel.Id))

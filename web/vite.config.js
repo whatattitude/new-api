@@ -29,6 +29,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['@douyinfe/semi-ui'],
   },
   plugins: [
     // code-inspector-plugin 仅在开发环境使用，构建时移除以避免依赖问题
@@ -49,6 +50,20 @@ export default defineConfig({
         });
       },
     },
+    {
+      name: 'resolve-semi-css',
+      enforce: 'pre',
+      resolveId(id, importer) {
+        if (id === '@douyinfe/semi-ui/dist/css/semi.css' || id.includes('semi-ui/dist/css/semi.css')) {
+          const resolved = path.resolve(
+            __dirname,
+            'node_modules/@douyinfe/semi-ui/dist/css/semi.css',
+          );
+          return resolved;
+        }
+        return null;
+      },
+    },
     react(),
     vitePluginSemi({
       cssLayer: true,
@@ -65,6 +80,10 @@ export default defineConfig({
     },
   },
   build: {
+    commonjsOptions: {
+      include: [/node_modules/],
+      transformMixedEsModules: true,
+    },
     rollupOptions: {
       output: {
         manualChunks: {
